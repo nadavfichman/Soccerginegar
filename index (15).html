@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>כדורגל גניגרי ושות'</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f2f6f0; }
+  .tab { background: transparent; border: none; color: #fff; padding: 7px 16px; border-radius: 8px; font-weight: 700; cursor: pointer; font-family: inherit; font-size: 14px; }
+  .tab.active { background: #fff; color: #166534; }
+  .btn { padding: 10px 16px; border-radius: 10px; border: 1px solid #cbd5cb; background: #fff; font-weight: 700; cursor: pointer; font-family: inherit; font-size: 14px; }
+  .btn.primary { background: #16a34a; color: #fff; border-color: #16a34a; }
+  .btn.ok { background: #ecfdf5; color: #166534; border-color: #86efac; }
+  .btn.danger { background: #fff; color: #dc2626; border-color: #fca5a5; }
+  .btn.small { padding: 7px 12px; font-size: 13px; }
+  .btn.big { width: 100%; padding: 14px; font-size: 16px; }
+  .btn.cancelBig { width: 100%; padding: 13px; font-size: 15px; background: #fee2e2; color: #b91c1c; border-color: #f87171; }
+  .btn.waBtn { width: 100%; margin-top: 10px; background: #25D366; color: #fff; border-color: #25D366; }
+  .btn.waBtn:disabled { background: #a7f3c4; border-color: #a7f3c4; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .mini { width: 28px; height: 28px; border-radius: 7px; border: 1px solid #cbd5cb; background: #fff; cursor: pointer; font-size: 12px; padding: 0; }
+  .mini.danger { color: #dc2626; border-color: #fca5a5; }
+  .badgeCount { background: #f59e0b; color: #fff; font-size: 13px; padding: 1px 9px; border-radius: 20px; }
+  .badge { display:inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; }
+  .badge.gv { background: #166534; color: #fff; }
+  .badge.g { background: #22883f; color: #fff; }
+  .badge.v { background: #ca8a04; color: #fff; }
+  .badge.r { background: #e2e8e2; color: #647564; }
+  .badge.a { background: #1d4ed8; color: #fff; }
+  .pill { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
+  .pill.open { background: #dcfce7; color: #166534; }
+  .pill.closed { background: #e2e8e2; color: #647564; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+// ==== חיבור ל-Supabase ====
+const SUPABASE_URL = "https://unjlkvszqdigyfxwnmot.supabase.co";
+const SUPABASE_KEY = "sb_publishable_Az_gUJnuPo61SJ9VTq8VTg_vHPWNk1y";
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const MAX_PLAYERS = 22;
+
+// ==== עזרי זמן ====
+const fmt = (ts) => new Date(ts).toLocaleString("he-IL", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const dateOnly = (ts) => new Date(ts).toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" });
+const dayName = (ts) => new Date(ts).toLocaleDateString("he-IL", { weekday: "long" });
+function countdown(ms) {
+  if (ms <= 0) return "פתוח";
+  const d = Math.floor(ms/86400000), h = Math.floor((ms%86400000)/3600000), m = Math.floor((ms%3600000)/60000), s = Math.floor((ms%60000)/1000);
+  if (d>0) return d+" ימים "+h+" שע׳";
+  if (h>0) return h+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
+  return m+":"+String(s).padStart(2,"0");
+}
+
+// ==== טלפון ====
+function normPhone(raw){ let d=(raw||"").replace(/\D/g,""); if(d.startsWith("972")) d="0"+d.slice(3); return d; }
+function validName(name){ const parts=(name||"").trim().split(/\s+/).filter(Boolean); return parts.length>=2; }
+function normName(name){ return (name||"").trim().replace(/\s+/g," ").toLowerCase(); }
+const validPhone = (raw)=>{ const d=normPhone(raw); return d.length===10 && d.startsWith("05"); };
+
+// ==== מיון עדיפות ====
+function tierRank(reg, roster){
+  const p = roster.find(r=>r.id===reg.player_id);
+  if(!p) return 1;
+  if (p.is_ganigari && p.is_vatik) return 4;
+  if (p.is_ganigari) return 3;
+  if (p.is_vatik) return 2;
+  return 1;
+}
+function sortRegs(regs, roster){ return [...regs].sort((a,b)=>{ const ra=tierRank(a,roster),rb=tierRank(b,roster); if(ra!==rb) return rb-ra; return a.ts-b.ts; }); }
+
+// ==== שכבת גישה לנתונים ====
+const api = {
+  async loadAll() {
+    const [players, preqs, admins, areqs, games, regs] = await Promise.all([
+      db.from("players").select("*"),
+      db.from("player_requests").select("*"),
+      db.from("admins").select("*"),
+      db.from("admin_requests").select("*"),
+      db.from("games").select("*"),
+      db.from("registrations").select("*"),
+    ]);
+    return {
+      roster: players.data || [],
+      pending: preqs.data || [],
+      admins: admins.data || [],
+      adminReqs: areqs.data || [],
+      games: games.data || [],
+      regs: regs.data || [],
+    };
+  },
+  // בדיקת תפקיד — מוגן, לא חושף שום סוד. אף תפקיד לא ניתן לפי טלפון בלבד.
+  async checkLogin(pw, phone, pin) {
+    const { data, error } = await db.rpc("check_login", { input_pw: pw || null, input_phone: phone || null, input_pin: pin || null });
+    if (error) { console.error(error); return null; }
+    return data; // 'super' | 'admin' | null
+  },
+  // רמז בלבד לממשק (איזה שדה להציג) — לא מעניק שום הרשאה בעצמו
+  async loginHint(phone) {
+    if (!phone) return null;
+    const { data, error } = await db.rpc("login_hint", { input_phone: phone });
+    if (error) { console.error(error); return null; }
+    return data; // 'super' | 'admin' | null
+  },
+  // עדכון הגדרות — דורש את סיסמת האדמין-על הנוכחית לאימות
+  async updateSettings(currentSuperPw, newSuperPw, newSuperPhone) {
+    const { data, error } = await db.rpc("update_settings", {
+      current_super_pw: currentSuperPw, new_super_pw: newSuperPw, new_super_phone: newSuperPhone || null,
+    });
+    if (error) { console.error(error); return false; }
+    return data === true;
+  },
+  async createInvite(currentSuperPw, targetPhone) {
+    const { data, error } = await db.rpc("create_admin_invite", { current_super_pw: currentSuperPw, target_phone: targetPhone });
+    if (error) { console.error(error); return { ok:false, error: error.message }; }
+    return { ok:true, code: data };
+  },
+  async listInvites(currentSuperPw) {
+    const { data, error } = await db.rpc("list_pending_invites", { current_super_pw: currentSuperPw });
+    if (error) { console.error(error); return { ok:false, error: error.message }; }
+    return { ok:true, invites: data || [] };
+  },
+  async cancelInvite(currentSuperPw, inviteId) {
+    const { data, error } = await db.rpc("cancel_admin_invite", { current_super_pw: currentSuperPw, invite_id: inviteId });
+    if (error) { console.error(error); return false; }
+    return data === true;
+  },
+  async redeemInvite(phone, code, pin) {
+    const { data, error } = await db.rpc("redeem_admin_invite", { input_phone: phone, input_code: code, input_pin: pin });
+    if (error) { console.error(error); return "error"; }
+    return data; // 'ok' | 'not_a_player' | 'invalid_code' | 'already_admin' | 'pin_too_short'
+  },
+  async createPinReset(currentSuperPw, targetPhone) {
+    const { data, error } = await db.rpc("create_pin_reset", { current_super_pw: currentSuperPw, target_phone: targetPhone });
+    if (error) { console.error(error); return { ok:false }; }
+    return { ok:true, code: data };
+  },
+  async listPinResets(currentSuperPw) {
+    const { data, error } = await db.rpc("list_pending_resets", { current_super_pw: currentSuperPw });
+    if (error) { console.error(error); return { ok:false, resets: [] }; }
+    return { ok:true, resets: data || [] };
+  },
+  async cancelPinReset(currentSuperPw, resetId) {
+    const { data, error } = await db.rpc("cancel_pin_reset", { current_super_pw: currentSuperPw, reset_id: resetId });
+    if (error) { console.error(error); return false; }
+    return data === true;
+  },
+  async redeemPinReset(phone, code, pin) {
+    const { data, error } = await db.rpc("redeem_pin_reset", { input_phone: phone, input_code: code, input_pin: pin });
+    if (error) { console.error(error); return "error"; }
+    return data; // 'ok' | 'not_admin' | 'invalid_code' | 'pin_too_short'
+  },
+};
+
+// ============================================================================
+function App() {
+  const [loaded, setLoaded] = useState(false);
+  const [err, setErr] = useState("");
+  const [now, setNow] = useState(Date.now());
+  const [view, setView] = useState("player");
+  const [role, setRole] = useState(null);
+
+  const [roster, setRoster] = useState([]);
+  const [pending, setPending] = useState([]);
+  const [admins, setAdmins] = useState([]);
+  const [adminReqs, setAdminReqs] = useState([]);
+  const [games, setGames] = useState([]);
+  const [regs, setRegs] = useState([]);
+  const [myPhone, setMyPhone] = useState(() => localStorage.getItem("myPhone") || null);
+
+  const refresh = async () => {
+    try {
+      const d = await api.loadAll();
+      setRoster(d.roster); setPending(d.pending); setAdmins(d.admins);
+      setAdminReqs(d.adminReqs); setGames(d.games); setRegs(d.regs);
+      setErr("");
+    } catch(e){ setErr("בעיה בחיבור לשרת. בדוק חיבור אינטרנט."); console.error(e); }
+    setLoaded(true);
+  };
+
+  useEffect(() => { refresh(); }, []);
+  // רענון אוטומטי כל 5 שניות כדי לסנכרן בין מכשירים
+  useEffect(() => { const t = setInterval(refresh, 5000); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => { if (myPhone) localStorage.setItem("myPhone", myPhone); else localStorage.removeItem("myPhone"); }, [myPhone]);
+
+  // בונה מבנה game עם registrations מקוננות (כמו הגרסה הישנה)
+  const gamesWithRegs = games.map(g => ({
+    id: g.id, kickoff: g.kickoff, opensAt: g.opens_at,
+    published: g.published, rosterPublished: g.roster_published,
+    registrations: regs.filter(r => r.game_id === g.id).map(r => ({ playerId: r.player_id, ts: r.ts })),
+  }));
+
+  if (!loaded) return <div style={S.loading}>טוען…</div>;
+
+  return (
+    <div dir="rtl" style={S.app}>
+      <Header view={view} setView={setView} />
+      {err && <div style={S.errBar}>{err}</div>}
+      {view === "player" ? (
+        <PlayerView {...{ roster, pending, games: gamesWithRegs, myPhone, setMyPhone, now, refresh }} />
+      ) : (
+        <AdminView {...{ roster, pending, games: gamesWithRegs, now, role, setRole,
+          admins, myPhone, setMyPhone, refresh }} />
+      )}
+      <footer style={S.footer}>כדורגל גניגרי ושות' · ניהול רישום ורשימות · גרסה בדיקה 1</footer>
+    </div>
+  );
+}
+
+function Header({ view, setView }) {
+  return (
+    <header style={S.header}>
+      <div style={S.brand}>
+        <span style={S.ball}>⚽</span>
+        <div><div style={S.brandTitle}>כדורגל גניגרי ושות'</div><div style={S.brandSub}>רישום למשחקים</div></div>
+      </div>
+      {view === "player" ? (
+        <button style={S.adminIconBtn} onClick={()=>setView("admin")} title="ניהול" aria-label="ניהול">⚙</button>
+      ) : (
+        <button style={S.backBtn} onClick={()=>setView("player")}>→ חזרה למסך שחקן</button>
+      )}
+    </header>
+  );
+}
+
+// ============================================================================
+// צד שחקן
+// ============================================================================
+function PlayerView({ roster, pending, games, myPhone, setMyPhone, now, refresh }) {
+  const me = roster.find(p => p.phone === myPhone);
+  const myPending = pending.find(p => p.phone === myPhone);
+
+  if (!myPhone || (!me && !myPending)) {
+    return <OnboardScreen {...{ roster, pending, myPhone, setMyPhone, refresh }} />;
+  }
+  if (myPending) {
+    return (
+      <main style={S.main}>
+        <section style={S.card}>
+          <div style={S.waitBig}>⏳</div>
+          <h2 style={S.centerTitle}>הבקשה שלך ממתינה לאישור</h2>
+          <p style={S.centerText}>שלום {myPending.name}, הבקשה שלך נשלחה למנהל. לאחר אישור תוכל להירשם למשחקים.</p>
+          <button className="btn" style={{marginTop:8}} onClick={()=>setMyPhone(null)}>החלף מספר</button>
+        </section>
+      </main>
+    );
+  }
+  const visible = games.filter(g => g.published !== false).sort((a,b)=>a.kickoff-b.kickoff);
+  const nextToOpen = visible.filter(g => now < g.opensAt).sort((a,b)=>a.opensAt-b.opensAt)[0];
+
+  return (
+    <main style={S.main}>
+      <section style={S.hello}>
+        <div><div style={S.helloName}>שלום, {me.name} 👋</div><div style={S.helloTier}>שחקן מאושר</div></div>
+        <button className="btn small" onClick={()=>setMyPhone(null)}>לא אתה?</button>
+      </section>
+      {nextToOpen && <CountdownBanner game={nextToOpen} now={now} />}
+      {visible.length===0 && <div style={S.empty}>אין כרגע משחקים מפורסמים.</div>}
+      {visible.map(g => <GameCard key={g.id} game={g} roster={roster} me={me} now={now} refresh={refresh} />)}
+    </main>
+  );
+}
+
+function OnboardScreen({ roster, pending, setMyPhone, refresh }) {
+  const [name,setName]=useState(""); const [phone,setPhone]=useState(""); const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
+  const submit = async () => {
+    setErr("");
+    const p = normPhone(phone);
+    if (!validPhone(phone)) { setErr("מספר טלפון לא תקין (למשל 0501234567)"); return; }
+    if (!validName(name)) { setErr("נא להזין שם פרטי ושם משפחה"); return; }
+    if (roster.some(r=>r.phone===p) || pending.some(r=>r.phone===p)) { setMyPhone(p); return; }
+    const nn = normName(name);
+    if (roster.some(r=>normName(r.name)===nn) || pending.some(r=>normName(r.name)===nn)) {
+      setErr("שם זה כבר קיים ברשימה. אם זה אתה, פנה למנהל."); return;
+    }
+    setBusy(true);
+    const { error } = await db.from("player_requests").insert({ id:"req"+Date.now(), name:name.trim(), phone:p });
+    setBusy(false);
+    if (error) { setErr("שגיאה בשליחה, נסה שוב"); return; }
+    setMyPhone(p); await refresh();
+  };
+  return (
+    <main style={S.main}>
+      <section style={S.card}>
+        <h2 style={S.centerTitle}>הצטרפות לקבוצה</h2>
+        <p style={S.centerText}>הזן שם ומספר טלפון פעם אחת. לאחר אישור המנהל, כל מה שתצטרך לעשות זה ללחוץ "מגיע".</p>
+        <label style={S.label}>שם מלא</label>
+        <input style={S.input} value={name} onChange={e=>setName(e.target.value)} placeholder="ישראל ישראלי" />
+        <label style={{...S.label,marginTop:12}}>מספר טלפון</label>
+        <input style={S.input} value={phone} onChange={e=>setPhone(e.target.value)} placeholder="0501234567" inputMode="tel" type="tel" onKeyDown={e=>e.key==="Enter"&&submit()} />
+        {err && <p style={S.errText}>{err}</p>}
+        <button className="btn primary" style={{marginTop:14,width:"100%"}} onClick={submit} disabled={busy}>{busy?"שולח…":"בקש הצטרפות"}</button>
+        <p style={{...S.hint,marginTop:10,fontSize:12}}>המספר משמש לזיהוי בלבד ונשמר במכשיר שלך.</p>
+      </section>
+    </main>
+  );
+}
+
+function CountdownBanner({ game, now }) {
+  const ms=game.opensAt-now; const d=Math.floor(ms/86400000),h=Math.floor((ms%86400000)/3600000),m=Math.floor((ms%3600000)/60000),s=Math.floor((ms%60000)/1000);
+  const pad=n=>String(n).padStart(2,"0");
+  const dow=new Date(game.kickoff).toLocaleDateString("he-IL",{weekday:"long"});
+  const time=new Date(game.kickoff).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"});
+  return (
+    <section style={S.countdown}>
+      <div style={S.cdHeadline}>רישום למשחק ביום {dow} בשעה {time}</div>
+      <div style={S.cdTop}>ההרשמה נפתחת בעוד</div>
+      <div style={S.cdClock}>
+        {d>0 && <><CdUnit val={d} label="ימים"/><span style={S.cdColon}>:</span></>}
+        <CdUnit val={pad(h)} label="שעות"/><span style={S.cdColon}>:</span>
+        <CdUnit val={pad(m)} label="דקות"/><span style={S.cdColon}>:</span>
+        <CdUnit val={pad(s)} label="שניות"/>
+      </div>
+      <div style={S.cdOpens}>פתיחה: {fmt(game.opensAt)}</div>
+    </section>
+  );
+}
+function CdUnit({val,label}){ return <div style={S.cdUnit}><div style={S.cdNum}>{val}</div><div style={S.cdLabel}>{label}</div></div>; }
+
+function GameCard({ game, roster, me, now, refresh }) {
+  const isOpen = now >= game.opensAt;
+  const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts})), roster);
+  const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
+  const myReg = game.registrations.find(r=>r.playerId===me.id);
+  const rosterPublished = game.rosterPublished === true;
+  const [busy,setBusy]=useState(false);
+
+  const register = async () => {
+    if(!isOpen||myReg||busy) return; setBusy(true);
+    await db.from("registrations").insert({ game_id:game.id, player_id:me.id, ts:Date.now() });
+    setBusy(false); await refresh();
+  };
+  const unregister = async () => {
+    setBusy(true);
+    await db.from("registrations").delete().eq("game_id",game.id).eq("player_id",me.id);
+    setBusy(false); await refresh();
+  };
+
+  return (
+    <section style={S.gameCard}>
+      <div style={S.gameHead}>
+        <div><div style={S.gameDay}>{dayName(game.kickoff)}</div><div style={S.gameTime}>{fmt(game.kickoff)}</div></div>
+        <span className={isOpen?"pill open":"pill closed"}>{isOpen?"פתוח להרשמה":"סגור"}</span>
+      </div>
+      {!isOpen && <div style={S.opensRow}>ההרשמה נפתחת: <b>{fmt(game.opensAt)}</b> · עוד <b>{countdown(game.opensAt-now)}</b></div>}
+      {isOpen ? (
+        myReg ? (
+          <div style={S.regBox}>
+            <div style={S.regConfirm}><span style={S.regCheck}>✓</span> נרשמת למשחק</div>
+            {rosterPublished
+              ? <div style={S.lockedNote}>הרשימה פורסמה ונעולה. לביטול הגעה — פנה למנהל.</div>
+              : <button className="btn cancelBig" onClick={unregister} disabled={busy}>לא מגיע — ביטול הגעה</button>}
+          </div>
+        ) : <button className="btn primary big" onClick={register} disabled={busy}>{busy?"…":"מגיע ✓"}</button>
+      ) : <button className="btn big" disabled>ההרשמה עדיין סגורה</button>}
+      {rosterPublished ? (
+        <><div style={S.publishedTag}>רשימת המשתתפים פורסמה</div>
+        <PlayerRosterList main={main} wait={wait} roster={roster} meId={me.id} /></>
+      ) : (myReg && <div style={S.pendingRoster}>המשתתפים במשחק יפורסמו בהמשך.</div>)}
+    </section>
+  );
+}
+
+function PlayerRosterList({ main, wait, roster, meId }) {
+  const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
+  return (
+    <div style={S.lists}>
+      <div>
+        <div style={S.listTitle}>משתתפים ({main.length}/{MAX_PLAYERS})</div>
+        <ol style={S.ol}>
+          {main.map((r,i)=><li key={r.player_id} style={r.player_id===meId?S.liMe:S.li}><span style={S.num}>{i+1}</span><span style={S.pname}>{nameOf(r.player_id)}</span></li>)}
+          {main.length===0 && <li style={S.liEmpty}>אין נרשמים</li>}
+        </ol>
+      </div>
+      {wait.length>0 && (
+        <div>
+          <div style={{...S.listTitle,color:"#b45309"}}>רשימת המתנה ({wait.length})</div>
+          <ol style={S.ol}>
+            {wait.map((r,i)=><li key={r.player_id} style={r.player_id===meId?S.liMe:S.liWait}><span style={S.num}>{i+1}</span><span style={S.pname}>{nameOf(r.player_id)}</span></li>)}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// צד ניהול
+// ============================================================================
+function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone, setMyPhone, refresh }) {
+  const [pw,setPw]=useState(""); const [pin,setPin]=useState("");
+  const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
+  const [hint,setHint]=useState(null); // 'super' | 'admin' | null — רמז בלבד, לא מעניק הרשאה
+
+  useEffect(() => {
+    let alive = true;
+    if (myPhone && !role) {
+      api.loginHint(myPhone).then(r => { if (alive) setHint(r); });
+    } else {
+      setHint(null);
+    }
+    return () => { alive = false; };
+  }, [myPhone, role]);
+
+  if (!role) {
+    const tryLoginPw = async () => {
+      setErr(""); setBusy(true);
+      const r = await api.checkLogin(pw, null, null);
+      setBusy(false);
+      if (r === "super") { setRole(r); return; }
+      if (r === "locked") { setErr("יותר מדי ניסיונות שגויים. נסה שוב בעוד כמה דקות."); return; }
+      setErr("סיסמה שגויה");
+    };
+    const tryLoginPin = async () => {
+      setErr(""); setBusy(true);
+      const r = await api.checkLogin(null, myPhone, pin);
+      setBusy(false);
+      if (r === "admin") { setRole(r); return; }
+      if (r === "locked") { setErr("יותר מדי ניסיונות שגויים. נסה שוב בעוד כמה דקות."); return; }
+      setErr("קוד אישי שגוי");
+    };
+    return (
+      <main style={S.main}>
+        {hint === "super" && (
+          <section style={{...S.card,...S.cardHot}}>
+            <p style={S.hint}>המכשיר הזה מזוהה כאדמין-על — עדיין נדרשת סיסמה לאישור, לביטחונך.</p>
+          </section>
+        )}
+        {hint === "admin" && (
+          <section style={{...S.card,...S.cardHot}}>
+            <p style={S.hint}>המכשיר הזה מזוהה כמנהל. הזן את הקוד האישי שבחרת בעת ההצטרפות:</p>
+            <input style={S.input} type="password" inputMode="numeric" placeholder="קוד אישי" value={pin} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&tryLoginPin()} />
+            <button className="btn primary" style={{marginTop:10,width:"100%"}} onClick={tryLoginPin} disabled={busy}>{busy?"בודק…":"כניסה כמנהל"}</button>
+          </section>
+        )}
+        <section style={S.card}>
+          <label style={S.label}>כניסת אדמין-על</label>
+          <p style={S.hint}>מיועד לאדמין-על בלבד. הזיהוי לפי טלפון הוא רמז בלבד — הכניסה בפועל תמיד דורשת את הסיסמה.</p>
+          <input style={S.input} type="password" placeholder="סיסמת אדמין-על" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&tryLoginPw()} />
+          <button className="btn primary" style={{marginTop:10}} onClick={tryLoginPw} disabled={busy}>{busy?"בודק…":"כניסה"}</button>
+          {err && <p style={S.errText}>{err}</p>}
+        </section>
+        <RedeemInviteForm {...{ myPhone, setMyPhone, setRole, refresh }} />
+        <ResetPinForm {...{ myPhone, setRole }} />
+      </main>
+    );
+  }
+
+  const isSuper = role === "super";
+  return (
+    <main style={S.main}>
+      <section style={S.roleBar}>
+        <span style={S.roleTag}>{isSuper?"אדמין־על":"מנהל"}</span>
+        <button className="btn small" onClick={()=>{setRole(null);setPw("");setPin("");}}>יציאה</button>
+      </section>
+      {isSuper && (
+        <>
+          <SuperAdminPanel {...{ admins, roster, refresh }} />
+          <PendingRequests {...{ pending, roster, refresh }} />
+        </>
+      )}
+      <AdminGames {...{ games, roster, now, refresh }} />
+      {isSuper && <AdminRoster {...{ roster, admins, refresh }} />}
+    </main>
+  );
+}
+
+// טופס למי שקיבל קוד הזמנה מהאדמין-על — רק זה שיש לו קוד תקף יכול להיכנס
+// למנהל ששכח את הקוד האישי שלו — מאפס עם קוד איפוס חד-פעמי מהאדמין-על
+function ResetPinForm({ myPhone, setRole }) {
+  const [open,setOpen]=useState(false);
+  const [phone,setPhone]=useState(myPhone||""); const [code,setCode]=useState("");
+  const [pin,setPin]=useState(""); const [pin2,setPin2]=useState("");
+  const [err,setErr]=useState(""); const [msg,setMsg]=useState(""); const [busy,setBusy]=useState(false);
+
+  if (!open) {
+    return (
+      <p style={{...S.hint,textAlign:"center"}}>
+        <span style={S.linkText} onClick={()=>setOpen(true)}>שכחת את הקוד האישי שלך?</span>
+      </p>
+    );
+  }
+
+  const submit = async () => {
+    setErr(""); setMsg("");
+    if (!validPhone(phone)) { setErr("טלפון לא תקין"); return; }
+    if (!code.trim()) { setErr("נא להזין את קוד האיפוס שקיבלת"); return; }
+    if (pin.trim().length < 4) { setErr("הקוד האישי החדש חייב להיות באורך 4 ספרות לפחות"); return; }
+    if (pin.trim() !== pin2.trim()) { setErr("הקוד האישי וחזרה עליו לא תואמים"); return; }
+    setBusy(true);
+    const result = await api.redeemPinReset(normPhone(phone), code.trim(), pin.trim());
+    setBusy(false);
+    if (result === "ok") { setMsg("הקוד עודכן! אפשר להיכנס עכשיו עם הקוד החדש."); setCode(""); setPin(""); setPin2(""); return; }
+    if (result === "not_admin") setErr("המספר הזה אינו רשום כמנהל.");
+    else if (result === "pin_too_short") setErr("הקוד האישי קצר מדי");
+    else if (result === "locked") setErr("יותר מדי ניסיונות שגויים עם המספר הזה. נסה שוב בעוד כמה דקות.");
+    else setErr("קוד איפוס שגוי או שפג תוקפו. בקש קוד חדש מהאדמין-על.");
+  };
+
+  return (
+    <section style={S.card}>
+      <h2 style={S.h2}>איפוס קוד אישי</h2>
+      <p style={S.hint}>בקש מהאדמין-על קוד איפוס, והזן אותו כאן יחד עם קוד אישי חדש.</p>
+      <label style={S.labelSm}>מספר טלפון</label>
+      <input style={S.input} value={phone} onChange={e=>setPhone(e.target.value)} placeholder="0501234567" inputMode="tel" />
+      <label style={{...S.labelSm,marginTop:8}}>קוד איפוס (מהאדמין-על)</label>
+      <input style={S.input} value={code} onChange={e=>setCode(e.target.value)} placeholder="6 ספרות" inputMode="numeric" />
+      <label style={{...S.labelSm,marginTop:8}}>קוד אישי חדש</label>
+      <input style={S.input} type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="לדוגמה 1234" inputMode="numeric" />
+      <label style={{...S.labelSm,marginTop:8}}>אימות הקוד החדש</label>
+      <input style={S.input} type="password" value={pin2} onChange={e=>setPin2(e.target.value)} placeholder="הקלד שוב" inputMode="numeric" onKeyDown={e=>e.key==="Enter"&&submit()} />
+      {err && <p style={S.errText}>{err}</p>}
+      {msg && <p style={{...S.hint,color:"#166534",fontWeight:700}}>{msg}</p>}
+      <button className="btn primary" style={{marginTop:10,width:"100%"}} onClick={submit} disabled={busy}>{busy?"מעדכן…":"אפס קוד אישי"}</button>
+    </section>
+  );
+}
+
+function RedeemInviteForm({ myPhone, setMyPhone, setRole, refresh }) {
+  const [phone,setPhone]=useState(myPhone||""); const [code,setCode]=useState("");
+  const [pin,setPin]=useState(""); const [pin2,setPin2]=useState("");
+  const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
+
+  const submit = async () => {
+    setErr("");
+    if (!validPhone(phone)) { setErr("טלפון לא תקין"); return; }
+    if (!code.trim()) { setErr("נא להזין את הקוד שקיבלת"); return; }
+    if (pin.trim().length < 4) { setErr("הקוד האישי חייב להיות באורך 4 ספרות לפחות"); return; }
+    if (pin.trim() !== pin2.trim()) { setErr("הקוד האישי וחזרה עליו לא תואמים"); return; }
+    setBusy(true);
+    const result = await api.redeemInvite(normPhone(phone), code.trim(), pin.trim());
+    setBusy(false);
+    if (result === "ok") {
+      if (!myPhone) setMyPhone(normPhone(phone));
+      await refresh();
+      setRole("admin");
+      return;
+    }
+    if (result === "not_a_player") setErr("המספר הזה עדיין לא רשום ומאושר כשחקן בקבוצה. יש להירשם קודם כשחקן.");
+    else if (result === "already_admin") setErr("המספר הזה כבר מוגדר כמנהל — נסה להיכנס עם הקוד האישי שלך.");
+    else if (result === "pin_too_short") setErr("הקוד האישי קצר מדי");
+    else if (result === "locked") setErr("יותר מדי ניסיונות שגויים עם המספר הזה. נסה שוב בעוד כמה דקות.");
+    else setErr("קוד הזמנה שגוי או שפג תוקפו. בקש קוד חדש מהאדמין-על.");
+  };
+
+  return (
+    <section style={S.card}>
+      <h2 style={S.h2}>יש לך הזמנה להיות מנהל?</h2>
+      <p style={S.hint}>רק אדמין-על יכול להזמין מנהל. אם קיבלת ממנו קוד — הזן אותו כאן, ובחר קוד אישי משלך (שרק אתה תדע) לכניסות הבאות.</p>
+      <label style={S.labelSm}>מספר טלפון</label>
+      <input style={S.input} value={phone} onChange={e=>setPhone(e.target.value)} placeholder="0501234567" inputMode="tel" />
+      <label style={{...S.labelSm,marginTop:8}}>קוד הזמנה (מהאדמין-על)</label>
+      <input style={S.input} value={code} onChange={e=>setCode(e.target.value)} placeholder="6 ספרות" inputMode="numeric" />
+      <label style={{...S.labelSm,marginTop:8}}>בחר קוד אישי (4 ספרות לפחות, רק אתה תדע)</label>
+      <input style={S.input} type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="לדוגמה 1234" inputMode="numeric" />
+      <label style={{...S.labelSm,marginTop:8}}>אימות הקוד האישי</label>
+      <input style={S.input} type="password" value={pin2} onChange={e=>setPin2(e.target.value)} placeholder="הקלד שוב" inputMode="numeric" onKeyDown={e=>e.key==="Enter"&&submit()} />
+      {err && <p style={S.errText}>{err}</p>}
+      <button className="btn primary" style={{marginTop:10,width:"100%"}} onClick={submit} disabled={busy}>{busy?"בודק…":"אשר הזמנה"}</button>
+    </section>
+  );
+}
+
+function SuperAdminPanel({ admins, roster, refresh }) {
+  const removeAdmin = async (id) => { await db.from("admins").delete().eq("id",id); await refresh(); };
+  return (
+    <>
+      <AdminInvites {...{ admins, roster, refresh }} />
+      <AdminPinResets {...{ admins }} />
+      <section style={S.card}>
+        <h2 style={S.h2}>מנהלים ({admins.length})</h2>
+        {admins.length===0 && <p style={S.hint}>אין מנהלים מאושרים עדיין.</p>}
+        {admins.map(a=>(
+          <div key={a.id} style={S.rosterRow}>
+            <div><div style={S.pname}>{a.name}</div><div style={S.subLine}>{a.phone}</div></div>
+            <button className="mini danger" onClick={()=>removeAdmin(a.id)}>✕</button>
+          </div>
+        ))}
+      </section>
+      <SuperSettings refresh={refresh} />
+    </>
+  );
+}
+
+// איפוס קוד אישי למנהל שכבר קיים ששכח אותו
+function AdminPinResets({ admins }) {
+  const [superPw,setSuperPw]=useState("");
+  const [targetPhone,setTargetPhone]=useState("");
+  const [lastCode,setLastCode]=useState(null);
+  const [resets,setResets]=useState([]);
+  const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
+
+  const loadResets = async (pw) => { const r = await api.listPinResets(pw); if (r.ok) setResets(r.resets); };
+  const nameOfPhone = ph => (admins.find(a=>a.phone===ph)||{}).name || ph;
+
+  const create = async () => {
+    setErr(""); setLastCode(null);
+    if (!superPw.trim()) { setErr("נא להזין סיסמת אדמין-על"); return; }
+    if (!targetPhone) { setErr("בחר מנהל לאיפוס"); return; }
+    setBusy(true);
+    const r = await api.createPinReset(superPw.trim(), targetPhone);
+    setBusy(false);
+    if (!r.ok) { setErr("שגיאה — ודא שסיסמת האדמין-על נכונה"); return; }
+    setLastCode(r.code);
+    await loadResets(superPw.trim());
+  };
+  const cancel = async (id) => {
+    if (!superPw.trim()) { setErr("נא להזין סיסמת אדמין-על כדי לבטל"); return; }
+    await api.cancelPinReset(superPw.trim(), id);
+    await loadResets(superPw.trim());
+  };
+  const shareWa = (phone, code) => {
+    const text = "היי! אדמין-העל אישר איפוס קוד אישי עבורך באפליקציית כדורגל גניגרי ושות'.\nהיכנס ללשונית ניהול, לחץ על \"שכחת את הקוד האישי?\" והזן את קוד האיפוס: " + code;
+    window.open("https://wa.me/972"+phone.replace(/^0/,"")+"?text="+encodeURIComponent(text), "_blank");
+  };
+
+  return (
+    <section style={S.card}>
+      <h2 style={S.h2}>איפוס קוד אישי למנהל</h2>
+      <p style={S.hint}>אם מנהל שכח את הקוד האישי שלו — צור לו כאן קוד איפוס חד-פעמי ושלח אותו ידנית.</p>
+
+      <label style={S.labelSm}>סיסמת אדמין-על (לאימות פעולה זו)</label>
+      <input style={S.input} type="password" value={superPw} onChange={e=>setSuperPw(e.target.value)} onBlur={()=>superPw&&loadResets(superPw)} />
+
+      <label style={{...S.labelSm,marginTop:10}}>בחר מנהל</label>
+      <select style={S.selectSm2} value={targetPhone} onChange={e=>setTargetPhone(e.target.value)}>
+        <option value="">— בחר —</option>
+        {admins.map(a=><option key={a.id} value={a.phone}>{a.name} · {a.phone}</option>)}
+      </select>
+
+      {err && <p style={S.errText}>{err}</p>}
+      <button className="btn primary" style={{marginTop:10,width:"100%"}} onClick={create} disabled={busy}>{busy?"יוצר…":"צור קוד איפוס"}</button>
+
+      {lastCode && (
+        <div style={S.codeBox}>
+          <div style={S.codeLabel}>קוד האיפוס עבור {nameOfPhone(targetPhone)}:</div>
+          <div style={S.codeValue}>{lastCode}</div>
+          <button className="btn waBtn" onClick={()=>shareWa(targetPhone, lastCode)}>שלח קוד בוואטסאפ</button>
+        </div>
+      )}
+
+      {resets.length > 0 && (
+        <div style={{marginTop:14}}>
+          <div style={S.listTitle}>איפוסים ממתינים ({resets.length})</div>
+          {resets.map(r=>(
+            <div key={r.id} style={S.rosterRow}>
+              <div><div style={S.pname}>{nameOfPhone(r.admin_phone)}</div><div style={S.subLine}>{r.admin_phone} · קוד {r.code}</div></div>
+              <button className="mini danger" onClick={()=>cancel(r.id)}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// הזמנת מנהלים חדשים: רק שחקן שכבר מאושר ברשימה יכול להיבחר,
+// ורק מי שיקבל ממך את הקוד בפועל (ידנית, בוואטסאפ למשל) יוכל לממש אותו.
+function AdminInvites({ admins, roster, refresh }) {
+  const [superPw,setSuperPw]=useState("");
+  const [targetPhone,setTargetPhone]=useState("");
+  const [lastCode,setLastCode]=useState(null);
+  const [invites,setInvites]=useState([]);
+  const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
+
+  const eligible = roster.filter(p => !admins.some(a=>a.phone===p.phone));
+
+  const loadInvites = async (pw) => {
+    const r = await api.listInvites(pw);
+    if (r.ok) setInvites(r.invites);
+  };
+  useEffect(() => { if (superPw) loadInvites(superPw); }, []); // eslint-disable-line
+
+  const create = async () => {
+    setErr(""); setLastCode(null);
+    if (!superPw.trim()) { setErr("נא להזין סיסמת אדמין-על"); return; }
+    if (!targetPhone) { setErr("בחר שחקן להזמנה"); return; }
+    setBusy(true);
+    const r = await api.createInvite(superPw.trim(), targetPhone);
+    setBusy(false);
+    if (!r.ok) { setErr("שגיאה — ודא שסיסמת האדמין-על נכונה"); return; }
+    setLastCode(r.code);
+    await loadInvites(superPw.trim());
+  };
+
+  const cancel = async (id) => {
+    if (!superPw.trim()) { setErr("נא להזין סיסמת אדמין-על כדי לבטל"); return; }
+    await api.cancelInvite(superPw.trim(), id);
+    await loadInvites(superPw.trim());
+  };
+
+  const nameOfPhone = ph => (roster.find(r=>r.phone===ph)||{}).name || ph;
+  const shareWa = (phone, code) => {
+    const text = "היי! אתה מוזמן להיות מנהל באפליקציית כדורגל גניגרי ושות'.\nהיכנס ללשונית ניהול והזן את הקוד: " + code;
+    window.open("https://wa.me/972"+phone.replace(/^0/,"")+"?text="+encodeURIComponent(text), "_blank");
+  };
+
+  return (
+    <section style={S.card}>
+      <h2 style={S.h2}>הזמנת מנהל חדש</h2>
+      <p style={S.hint}>ניתן להזמין רק שחקן שכבר מאושר ברשימה. תישלח לך כאן הזמנה חד-פעמית — יש לשלוח אותה ידנית (למשל בוואטסאפ) לשחקן, כדי לוודא שזה באמת הוא.</p>
+
+      <label style={S.labelSm}>סיסמת אדמין-על (לאימות פעולה זו)</label>
+      <input style={S.input} type="password" value={superPw} onChange={e=>{ setSuperPw(e.target.value); }} onBlur={()=>superPw&&loadInvites(superPw)} />
+
+      <label style={{...S.labelSm,marginTop:10}}>בחר שחקן</label>
+      <select style={S.selectSm2} value={targetPhone} onChange={e=>setTargetPhone(e.target.value)}>
+        <option value="">— בחר —</option>
+        {eligible.map(p=><option key={p.id} value={p.phone}>{p.name} · {p.phone}</option>)}
+      </select>
+
+      {err && <p style={S.errText}>{err}</p>}
+      <button className="btn primary" style={{marginTop:10,width:"100%"}} onClick={create} disabled={busy}>{busy?"יוצר…":"צור קוד הזמנה"}</button>
+
+      {lastCode && (
+        <div style={S.codeBox}>
+          <div style={S.codeLabel}>הקוד עבור {nameOfPhone(targetPhone)}:</div>
+          <div style={S.codeValue}>{lastCode}</div>
+          <button className="btn waBtn" onClick={()=>shareWa(targetPhone, lastCode)}>שלח קוד בוואטסאפ</button>
+        </div>
+      )}
+
+      {invites.length > 0 && (
+        <div style={{marginTop:14}}>
+          <div style={S.listTitle}>הזמנות ממתינות ({invites.length})</div>
+          {invites.map(inv=>(
+            <div key={inv.id} style={S.rosterRow}>
+              <div><div style={S.pname}>{nameOfPhone(inv.player_phone)}</div><div style={S.subLine}>{inv.player_phone} · קוד {inv.code}</div></div>
+              <button className="mini danger" onClick={()=>cancel(inv.id)}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// הסיסמאות הנוכחיות אינן ניתנות לקריאה מהדפדפן — הטופס תמיד ריק, וכל שמירה
+// דורשת את סיסמת האדמין-על הנוכחית לאימות (מאומת בתוך בסיס הנתונים בלבד).
+function SuperSettings({ refresh }) {
+  const [currentSuperPw,setCurrentSuperPw]=useState("");
+  const [superPw,setSuperPw]=useState("");
+  const [superPhone,setSuperPhone]=useState("");
+  const [msg,setMsg]=useState(""); const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
+  const save = async () => {
+    setErr(""); setMsg("");
+    if (!currentSuperPw.trim()) { setErr("נא להזין את סיסמת האדמין-על הנוכחית לאימות"); return; }
+    if (!superPw.trim()) { setErr("הסיסמה החדשה לא יכולה להיות ריקה"); return; }
+    if (superPhone && !validPhone(superPhone)) { setErr("טלפון אדמין לא תקין"); return; }
+    setBusy(true);
+    const ok = await api.updateSettings(currentSuperPw.trim(), superPw.trim(), superPhone?normPhone(superPhone):null);
+    setBusy(false);
+    if (!ok) { setErr("סיסמת האדמין-על הנוכחית שגויה — לא נשמר"); return; }
+    setMsg("נשמר"); setCurrentSuperPw(""); setTimeout(()=>setMsg(""),2500); await refresh();
+  };
+  return (
+    <section style={S.card}>
+      <h2 style={S.h2}>הגדרות אדמין-על</h2>
+      <p style={S.hint}>רק אתה רואה את המסך הזה. אין יותר סיסמה למנהלים — הם נכנסים רק לפי טלפון מזוהה. הסיסמה כאן היא שלך בלבד.</p>
+
+      <label style={S.labelSm}>אימות: סיסמת האדמין-על הנוכחית</label>
+      <input style={S.input} type="password" value={currentSuperPw} onChange={e=>setCurrentSuperPw(e.target.value)} placeholder="נדרש לאישור כל שינוי" />
+
+      <label style={{...S.labelSm,marginTop:14}}>סיסמת אדמין-על חדשה (רק לך)</label>
+      <input style={S.input} value={superPw} onChange={e=>setSuperPw(e.target.value)} placeholder="הזן ערך חדש" />
+      <label style={{...S.labelSm,marginTop:10}}>מספר הטלפון שלך (זיהוי אדמין-על)</label>
+      <input style={S.input} value={superPhone} inputMode="tel" placeholder="0501234567" onChange={e=>setSuperPhone(e.target.value)} />
+      <p style={{...S.hint,fontSize:12}}>תיכנס כאדמין-על אוטומטית מהמכשיר הזה, או בכל מכשיר עם סיסמת האדמין-על. אם תחליף מספר — עדכן כאן.</p>
+      {err && <p style={S.errText}>{err}</p>}
+      {msg && <p style={{...S.hint,color:"#166534",fontWeight:700}}>{msg}</p>}
+      <button className="btn primary" style={{marginTop:10}} onClick={save} disabled={busy}>{busy?"שומר…":"שמור הגדרות"}</button>
+    </section>
+  );
+}
+
+function PendingRequests({ pending, roster, refresh }) {
+  const pendingList = pending.filter(r => r.status !== "rejected");
+  const rejectedList = pending.filter(r => r.status === "rejected")
+    .sort((a,b) => new Date(b.decided_at||0) - new Date(a.decided_at||0));
+
+  const approve = async (req, isGanigari, isVatik) => {
+    await db.from("players").insert({ id:"p"+Date.now(), name:req.name, phone:req.phone, is_ganigari:isGanigari, is_vatik:isVatik });
+    await db.from("player_requests").delete().eq("id",req.id);
+    await refresh();
+  };
+  const reject = async (req) => {
+    await db.from("player_requests").update({ status:"rejected", decided_at: new Date().toISOString() }).eq("id",req.id);
+    await refresh();
+  };
+  const reconsider = async (req) => {
+    await db.from("player_requests").update({ status:"pending", decided_at: null }).eq("id",req.id);
+    await refresh();
+  };
+
+  return (
+    <>
+      <section style={{...S.card,...(pendingList.length?S.cardHot:{})}}>
+        <h2 style={S.h2}>בקשות ממתינות {pendingList.length>0 && <span className="badgeCount">{pendingList.length}</span>}</h2>
+        {pendingList.length===0 && <p style={S.hint}>אין בקשות חדשות.</p>}
+        {pendingList.map(req=>(
+          <div key={req.id} style={S.pendRow}>
+            <div><div style={S.pname}>{req.name}</div><div style={S.subLine}>{req.phone}</div></div>
+            <div style={S.pendActions}>
+              <button className="btn small" onClick={()=>approve(req,false,false)}>אשר · רגיל</button>
+              <button className="btn small ok" onClick={()=>approve(req,false,true)}>ותיק</button>
+              <button className="btn small ok" onClick={()=>approve(req,true,false)}>גניגרי</button>
+              <button className="btn small ok" onClick={()=>approve(req,true,true)}>גניגרי+ותיק</button>
+              <button className="btn danger small" onClick={()=>reject(req)}>דחה</button>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      <section style={S.card}>
+        <h2 style={S.h2}>בקשות שנדחו ({rejectedList.length})</h2>
+        {rejectedList.length===0 && <p style={S.hint}>אין בקשות שנדחו.</p>}
+        {rejectedList.map(req=>(
+          <div key={req.id} style={S.pendRow}>
+            <div>
+              <div style={S.pname}>{req.name}</div>
+              <div style={S.subLine}>{req.phone}</div>
+              {req.decided_at && <div style={S.subLine}>נדחה ב-{dateOnly(req.decided_at)}</div>}
+            </div>
+            <button className="btn small" onClick={()=>reconsider(req)}>שקול מחדש</button>
+          </div>
+        ))}
+      </section>
+    </>
+  );
+}
+
+function AdminGames({ games, roster, now, refresh }) {
+  const [showNew,setShowNew]=useState(false);
+  const addGame = async (g) => {
+    await db.from("games").insert({ id:"g"+Date.now(), kickoff:g.kickoff, opens_at:g.opensAt, published:false, roster_published:false });
+    setShowNew(false); await refresh();
+  };
+  return (
+    <section style={S.card}>
+      <div style={S.rowBetween}>
+        <h2 style={S.h2}>משחקים</h2>
+        <button className="btn primary small" onClick={()=>setShowNew(v=>!v)}>{showNew?"בטל":"+ משחק"}</button>
+      </div>
+      {showNew && <NewGameForm onAdd={addGame} />}
+      {[...games].sort((a,b)=>a.kickoff-b.kickoff).map(g=>(
+        <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} />
+      ))}
+    </section>
+  );
+}
+
+function NewGameForm({ onAdd }) {
+  const [kickoff,setKickoff]=useState(""); const [opensAt,setOpensAt]=useState("");
+  useEffect(()=>{ if(kickoff&&!opensAt){ const d=new Date(kickoff); d.setDate(d.getDate()-2); setOpensAt(toLocalInput(d)); } },[kickoff]);
+  return (
+    <div style={S.formBox}>
+      <label style={S.labelSm}>מועד המשחק</label>
+      <input style={S.input} type="datetime-local" value={kickoff} onChange={e=>setKickoff(e.target.value)} />
+      <label style={S.labelSm}>פתיחת הרשמה</label>
+      <input style={S.input} type="datetime-local" value={opensAt} onChange={e=>setOpensAt(e.target.value)} />
+      <button className="btn primary" style={{marginTop:8}} disabled={!kickoff||!opensAt} onClick={()=>onAdd({kickoff:new Date(kickoff).getTime(),opensAt:new Date(opensAt).getTime()})}>צור משחק (טיוטה)</button>
+    </div>
+  );
+}
+
+function AdminGameRow({ game, roster, now, refresh }) {
+  const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts})), roster);
+  const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
+  const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
+  const [addId,setAddId]=useState("");
+  const isOpen = now >= game.opensAt;
+
+  const setGameField = async (patch) => { await db.from("games").update(patch).eq("id",game.id); await refresh(); };
+  const removeReg = async (pid) => { await db.from("registrations").delete().eq("game_id",game.id).eq("player_id",pid); await refresh(); };
+  const addReg = async () => {
+    if (!addId || game.registrations.some(r=>r.playerId===addId)) return;
+    await db.from("registrations").insert({ game_id:game.id, player_id:addId, ts:Date.now() });
+    setAddId(""); await refresh();
+  };
+  const deleteGame = async () => { await db.from("games").delete().eq("id",game.id); await refresh(); };
+  const bump = async (pid, dir) => {
+    const idx = sorted.findIndex(r=>r.player_id===pid);
+    const swapWith = sorted[idx+dir]; if(!swapWith) return;
+    await db.from("registrations").update({ ts: swapWith.ts - dir }).eq("game_id",game.id).eq("player_id",pid);
+    await refresh();
+  };
+  const buildWa = () => {
+    const lines=["⚽ כדורגל גניגרי ושות'", "משחק "+dayName(game.kickoff)+" · "+fmt(game.kickoff), "", "משתתפים ("+main.length+"/"+MAX_PLAYERS+"):"];
+    main.forEach((r,i)=>lines.push((i+1)+". "+nameOf(r.player_id)));
+    if (wait.length>0){ lines.push(""); lines.push("רשימת המתנה ("+wait.length+"):"); wait.forEach((r,i)=>lines.push((i+1)+". "+nameOf(r.player_id))); }
+    return lines.join("\n");
+  };
+  const shareWa = () => window.open("https://wa.me/?text="+encodeURIComponent(buildWa()), "_blank");
+
+  return (
+    <div style={S.adminGame}>
+      <div style={S.rowBetween}>
+        <div><b>{dayName(game.kickoff)}</b> · {fmt(game.kickoff)}<div style={S.subLine}>פתיחה: {fmt(game.opensAt)} {isOpen?"· פתוח":"· טרם נפתח"}</div></div>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <span className={game.published?"pill open":"pill closed"}>{game.published?"מפורסם":"טיוטה"}</span>
+          <button className={game.published?"btn small":"btn primary small"} onClick={()=>setGameField({published:!game.published})}>{game.published?"בטל פרסום":"פרסם"}</button>
+          <button className="btn danger small" onClick={deleteGame}>מחק</button>
+        </div>
+      </div>
+      <div style={game.rosterPublished?S.pubBarOn:S.pubBar}>
+        <span style={S.pubText}>{game.rosterPublished?"✓ המשתתפים מפורסמים — השחקנים רואים את הרשימה":"רשימת המשתתפים מוסתרת — רק אתה רואה אותה"}</span>
+        <button className={game.rosterPublished?"btn small":"btn primary small"} onClick={()=>setGameField({roster_published:!game.rosterPublished})}>{game.rosterPublished?"הסתר משתתפים":"פרסם משתתפים"}</button>
+      </div>
+      <button className="btn waBtn" onClick={shareWa} disabled={main.length===0}>שלח רשימה לוואטסאפ</button>
+      <div style={S.addRow}>
+        <select style={S.selectSm} value={addId} onChange={e=>setAddId(e.target.value)}>
+          <option value="">+ הוסף שחקן ידנית…</option>
+          {roster.filter(p=>!game.registrations.some(r=>r.playerId===p.id)).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <button className="btn small" onClick={addReg} disabled={!addId}>הוסף</button>
+      </div>
+      <div style={S.adminList}>
+        <div style={S.listTitle}>משתתפים ({main.length}/{MAX_PLAYERS})</div>
+        {main.map((r,i)=><EditableRow key={r.player_id} i={i+1} name={nameOf(r.player_id)} onUp={()=>bump(r.player_id,-1)} onDown={()=>bump(r.player_id,1)} onRemove={()=>removeReg(r.player_id)} />)}
+        {main.length===0 && <div style={S.liEmpty}>אין נרשמים</div>}
+        {wait.length>0 && (
+          <>
+            <div style={{...S.listTitle,color:"#b45309",marginTop:10}}>רשימת המתנה ({wait.length})</div>
+            {wait.map((r,i)=><EditableRow key={r.player_id} i={i+1} wait name={nameOf(r.player_id)} onUp={()=>bump(r.player_id,-1)} onDown={()=>bump(r.player_id,1)} onRemove={()=>removeReg(r.player_id)} />)}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EditableRow({ i, name, onUp, onDown, onRemove, wait }) {
+  return (
+    <div style={wait?S.editRowWait:S.editRow}>
+      <span style={S.num}>{i}</span><span style={S.pname}>{name}</span>
+      <div style={{display:"flex",gap:4}}>
+        <button className="mini" onClick={onUp}>▲</button>
+        <button className="mini" onClick={onDown}>▼</button>
+        <button className="mini danger" onClick={onRemove}>✕</button>
+      </div>
+    </div>
+  );
+}
+
+function AdminRoster({ roster, admins, refresh }) {
+  const [name,setName]=useState(""); const [phone,setPhone]=useState("");
+  const [newGanigari,setNewGanigari]=useState(false); const [newVatik,setNewVatik]=useState(false);
+  const [err,setErr]=useState("");
+
+  const add = async () => {
+    setErr("");
+    if (!validName(name)) { setErr("נא להזין שם פרטי ושם משפחה"); return; }
+    if (!validPhone(phone)) { setErr("טלפון לא תקין"); return; }
+    const p = normPhone(phone);
+    if (roster.some(r=>r.phone===p)) { setErr("מספר קיים כבר ברשימה"); return; }
+    const nn = normName(name);
+    if (roster.some(r=>normName(r.name)===nn)) { setErr("שם זה כבר קיים ברשימה"); return; }
+    await db.from("players").insert({ id:"p"+Date.now(), name:name.trim(), phone:p, is_ganigari:newGanigari, is_vatik:newVatik });
+    setName(""); setPhone(""); setNewGanigari(false); setNewVatik(false); await refresh();
+  };
+  const toggleFlag = async (id, field, val) => { await db.from("players").update({ [field]: val }).eq("id",id); await refresh(); };
+  const remove = async (id) => { await db.from("players").delete().eq("id",id); await refresh(); };
+  const updatePhone = async (id, newPhoneRaw, otherErrSetter) => {
+    if (!validPhone(newPhoneRaw)) { otherErrSetter("טלפון לא תקין"); return false; }
+    const np = normPhone(newPhoneRaw);
+    if (roster.some(r=>r.id!==id && r.phone===np)) { otherErrSetter("המספר הזה כבר שייך לשחקן אחר"); return false; }
+    await db.from("players").update({ phone: np }).eq("id",id);
+    await refresh();
+    return true;
+  };
+
+  const rankOf = p => (p.is_ganigari && p.is_vatik) ? 4 : p.is_ganigari ? 3 : p.is_vatik ? 2 : 1;
+  const sorted = [...roster].sort((a,b) => rankOf(b) - rankOf(a));
+
+  const statusLabel = p => {
+    if (p.is_ganigari && p.is_vatik) return "גניגרי + ותיק";
+    if (p.is_ganigari) return "גניגרי";
+    if (p.is_vatik) return "ותיק";
+    return "רגיל";
+  };
+  const statusClass = p => (p.is_ganigari && p.is_vatik) ? "badge gv" : p.is_ganigari ? "badge g" : p.is_vatik ? "badge v" : "badge r";
+
+  return (
+    <section style={S.card}>
+      <h2 style={S.h2}>שחקנים מאושרים ({roster.length})</h2>
+      <p style={S.hint}>עדיפות: גניגרי+ותיק (גבוהה ביותר) ← גניגרי ← ותיק ← רגיל. שחקן יכול להיות גם גניגרי וגם ותיק בו-זמנית.</p>
+
+      <div style={S.formBox}>
+        <input style={S.input} placeholder="שם פרטי ושם משפחה" value={name} onChange={e=>setName(e.target.value)} />
+        <input style={{...S.input,marginTop:8}} placeholder="טלפון 0501234567" value={phone} inputMode="tel" onChange={e=>setPhone(e.target.value)} />
+        <div style={S.flagRow}>
+          <label style={S.flagLabel}><input type="checkbox" checked={newGanigari} onChange={e=>setNewGanigari(e.target.checked)} /> גניגרי</label>
+          <label style={S.flagLabel}><input type="checkbox" checked={newVatik} onChange={e=>setNewVatik(e.target.checked)} /> ותיק</label>
+          <button className="btn primary small" onClick={add}>הוסף</button>
+        </div>
+        {err && <p style={S.errText}>{err}</p>}
+      </div>
+
+      <div style={{marginTop:12}}>
+        {sorted.map(p=>{
+          const isAdmin = admins.some(a=>a.phone===p.phone);
+          return (
+            <div key={p.id} style={S.rosterRowWrap}>
+              <div style={S.rosterRow}>
+                <div>
+                  <div style={S.pname}>{p.name}</div>
+                  <PhoneEditor player={p} onSave={updatePhone} />
+                  {p.approved_at && <div style={S.subLine}>אושר ב-{dateOnly(p.approved_at)}</div>}
+                  <div style={{marginTop:4,display:"flex",gap:6,flexWrap:"wrap"}}>
+                    <span className={statusClass(p)}>{statusLabel(p)}</span>
+                    {isAdmin && <span className="badge a">מנהל</span>}
+                  </div>
+                </div>
+                <button className="mini danger" onClick={()=>remove(p.id)}>✕</button>
+              </div>
+              <div style={S.flagRow}>
+                <label style={S.flagLabel}><input type="checkbox" checked={!!p.is_ganigari} onChange={e=>toggleFlag(p.id,"is_ganigari",e.target.checked)} /> גניגרי</label>
+                <label style={S.flagLabel}><input type="checkbox" checked={!!p.is_vatik} onChange={e=>toggleFlag(p.id,"is_vatik",e.target.checked)} /> ותיק</label>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// עריכת מספר טלפון בשורה — לשימוש כששחקן מודיע שהחליף מספר
+function PhoneEditor({ player, onSave }) {
+  const [editing,setEditing]=useState(false);
+  const [val,setVal]=useState(player.phone);
+  const [err,setErr]=useState("");
+
+  if (!editing) {
+    return (
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={S.subLine}>{player.phone}</div>
+        <span style={{...S.linkText,fontSize:12}} onClick={()=>{setVal(player.phone); setErr(""); setEditing(true);}}>שנה מספר</span>
+      </div>
+    );
+  }
+  const save = async () => {
+    setErr("");
+    const ok = await onSave(player.id, val, setErr);
+    if (ok) setEditing(false);
+  };
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2,flexWrap:"wrap"}}>
+      <input style={{...S.input,width:150,padding:6}} value={val} onChange={e=>setVal(e.target.value)} inputMode="tel" />
+      <button className="btn small" onClick={save}>שמור</button>
+      <button className="btn small" onClick={()=>setEditing(false)}>בטל</button>
+      {err && <span style={{...S.errText,marginTop:0}}>{err}</span>}
+    </div>
+  );
+}
+
+function toLocalInput(d){ const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes()); }
+
+const S = {
+  loading: { padding:40, textAlign:"center", fontFamily:"system-ui" },
+  app: { maxWidth:640, margin:"0 auto", fontFamily:"'Heebo',system-ui,sans-serif", color:"#1a2e1a", minHeight:"100vh", background:"#f2f6f0" },
+  header: { display:"flex", justifyContent:"space-between", alignItems:"center", padding:"16px 18px", background:"linear-gradient(135deg,#166534,#15803d)", color:"#fff", position:"sticky", top:0, zIndex:5 },
+  brand: { display:"flex", alignItems:"center", gap:10 },
+  ball: { fontSize:28 }, brandTitle:{ fontWeight:800, fontSize:19 }, brandSub:{ fontSize:12, opacity:.85 },
+  tabs: { display:"flex", gap:6, background:"rgba(255,255,255,.15)", padding:4, borderRadius:10 },
+  adminIconBtn: { background:"rgba(255,255,255,.15)", border:"none", color:"#fff", width:34, height:34, borderRadius:8, fontSize:16, cursor:"pointer", opacity:.75 },
+  backBtn: { background:"rgba(255,255,255,.15)", border:"none", color:"#fff", padding:"7px 14px", borderRadius:8, fontSize:13, fontWeight:600, cursor:"pointer" },
+  errBar: { background:"#fee2e2", color:"#b91c1c", padding:"10px 14px", textAlign:"center", fontSize:13, fontWeight:700 },
+  main: { padding:14, display:"flex", flexDirection:"column", gap:14 },
+  card: { background:"#fff", borderRadius:14, padding:16, boxShadow:"0 1px 3px rgba(0,0,0,.06)" },
+  cardHot: { outline:"2px solid #f59e0b" },
+  roleBar: { display:"flex", justifyContent:"space-between", alignItems:"center", background:"#166534", color:"#fff", borderRadius:12, padding:"10px 14px" },
+  roleTag: { fontWeight:800, fontSize:15 },
+  hello: { display:"flex", justifyContent:"space-between", alignItems:"center", background:"#fff", borderRadius:14, padding:16, boxShadow:"0 1px 3px rgba(0,0,0,.06)" },
+  helloName: { fontWeight:800, fontSize:18, color:"#166534" }, helloTier:{ fontSize:13, color:"#5b6b5b", marginTop:2 },
+  label: { fontWeight:700, display:"block", marginBottom:8 },
+  labelSm: { fontWeight:600, fontSize:13, display:"block", margin:"8px 0 4px" },
+  centerTitle: { fontSize:20, fontWeight:800, color:"#166534", textAlign:"center", margin:"4px 0 8px" },
+  centerText: { textAlign:"center", color:"#5b6b5b", lineHeight:1.6, marginBottom:8 },
+  waitBig: { fontSize:48, textAlign:"center" },
+  selectSm: { padding:9, borderRadius:8, border:"1px solid #cbd5cb", fontFamily:"inherit", flex:1 },
+  selectSm2: { width:"100%", padding:10, borderRadius:8, border:"1px solid #cbd5cb", fontFamily:"inherit", fontSize:14, boxSizing:"border-box" },
+  codeBox: { marginTop:12, background:"#f2f6f0", borderRadius:10, padding:14, textAlign:"center" },
+  codeLabel: { fontSize:13, color:"#5b6b5b", marginBottom:6 },
+  codeValue: { fontSize:28, fontWeight:800, letterSpacing:4, color:"#166534", marginBottom:10, fontVariantNumeric:"tabular-nums" },
+  linkText: { color:"#166534", textDecoration:"underline", cursor:"pointer", fontWeight:600 },
+  tierSelect: { padding:6, borderRadius:8, border:"1px solid #cbd5cb", fontFamily:"inherit", fontSize:13 },
+  input: { width:"100%", padding:11, borderRadius:10, border:"1px solid #cbd5cb", fontSize:15, fontFamily:"inherit", boxSizing:"border-box" },
+  hint: { fontSize:13, color:"#5b6b5b", marginTop:8, lineHeight:1.5 },
+  errText: { fontSize:13, color:"#dc2626", marginTop:8 },
+  empty: { textAlign:"center", padding:30, color:"#5b6b5b", background:"#fff", borderRadius:14 },
+  countdown: { background:"linear-gradient(135deg,#0f3d1f,#166534)", color:"#fff", borderRadius:14, padding:"18px 16px", textAlign:"center", boxShadow:"0 2px 10px rgba(22,101,52,.25)" },
+  cdHeadline: { fontSize:17, fontWeight:800, marginBottom:12, lineHeight:1.35 },
+  cdTop: { fontSize:13, opacity:.85, fontWeight:600, marginBottom:10 },
+  cdClock: { display:"flex", justifyContent:"center", alignItems:"flex-start", gap:4, direction:"ltr" },
+  cdUnit: { display:"flex", flexDirection:"column", alignItems:"center", minWidth:46 },
+  cdNum: { fontSize:32, fontWeight:800, lineHeight:1, fontVariantNumeric:"tabular-nums" },
+  cdLabel: { fontSize:11, opacity:.8, marginTop:4 },
+  cdColon: { fontSize:28, fontWeight:800, opacity:.5, lineHeight:1.1 },
+  cdOpens: { fontSize:12, opacity:.8, marginTop:12 },
+  gameCard: { background:"#fff", borderRadius:14, padding:16, boxShadow:"0 1px 3px rgba(0,0,0,.06)" },
+  gameHead: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 },
+  gameDay: { fontWeight:800, fontSize:17, color:"#166534" }, gameTime:{ fontSize:13, color:"#5b6b5b" },
+  opensRow: { fontSize:13, background:"#fef3c7", color:"#92400e", padding:"8px 10px", borderRadius:8, marginBottom:10 },
+  regBox: { display:"flex", flexDirection:"column", gap:10, margin:"12px 0" },
+  regConfirm: { display:"flex", alignItems:"center", gap:8, fontWeight:800, fontSize:17, color:"#166534", background:"#dcfce7", padding:"12px 14px", borderRadius:10, justifyContent:"center" },
+  regCheck: { display:"inline-flex", width:24, height:24, borderRadius:"50%", background:"#16a34a", color:"#fff", alignItems:"center", justifyContent:"center", fontSize:14 },
+  lockedNote: { fontSize:13, color:"#5b6b5b", background:"#f2f6f0", padding:"11px 12px", borderRadius:10, textAlign:"center" },
+  pendingRoster: { marginTop:12, fontSize:13, color:"#92400e", background:"#fef3c7", padding:"10px 12px", borderRadius:8, textAlign:"center" },
+  publishedTag: { marginTop:12, marginBottom:4, fontSize:12, fontWeight:700, color:"#166534" },
+  lists: { display:"flex", flexDirection:"column", gap:14, marginTop:8 },
+  listTitle: { fontWeight:700, fontSize:14, marginBottom:6, color:"#166534" },
+  ol: { listStyle:"none", padding:0, margin:0, display:"flex", flexDirection:"column", gap:4 },
+  li: { display:"flex", alignItems:"center", gap:8, padding:"7px 10px", background:"#f2f6f0", borderRadius:8 },
+  liMe: { display:"flex", alignItems:"center", gap:8, padding:"7px 10px", background:"#dcfce7", borderRadius:8, outline:"2px solid #16a34a" },
+  liWait: { display:"flex", alignItems:"center", gap:8, padding:"7px 10px", background:"#fef9ee", borderRadius:8 },
+  liEmpty: { color:"#9ca79c", fontSize:13, padding:"6px 2px" },
+  num: { fontWeight:700, color:"#6b7a6b", minWidth:20, fontSize:13 },
+  pname: { fontWeight:600 },
+  footer: { textAlign:"center", padding:20, color:"#7a897a", fontSize:12 },
+  h2: { fontSize:17, fontWeight:800, margin:0, color:"#166534", display:"flex", alignItems:"center", gap:8 },
+  rowBetween: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 },
+  formBox: { background:"#f2f6f0", padding:12, borderRadius:10, marginTop:10 },
+  adminGame: { border:"1px solid #e2e8e2", borderRadius:10, padding:12, marginTop:12 },
+  subLine: { fontSize:12, color:"#5b6b5b", marginTop:2 },
+  addRow: { display:"flex", gap:8, marginTop:10, alignItems:"center" },
+  adminList: { marginTop:12 },
+  editRow: { display:"flex", alignItems:"center", gap:8, padding:"6px 8px", background:"#f2f6f0", borderRadius:8, marginBottom:4, justifyContent:"space-between" },
+  editRowWait: { display:"flex", alignItems:"center", gap:8, padding:"6px 8px", background:"#fef9ee", borderRadius:8, marginBottom:4, justifyContent:"space-between" },
+  rosterRow: { display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 10px", borderBottom:"1px solid #eef2ee" },
+  rosterRowWrap: { padding:"8px 10px", borderBottom:"1px solid #eef2ee" },
+  flagRow: { display:"flex", gap:14, alignItems:"center", marginTop:8, flexWrap:"wrap" },
+  flagLabel: { display:"flex", alignItems:"center", gap:5, fontSize:13, cursor:"pointer" },
+  pubBar: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, background:"#fef3c7", padding:"10px 12px", borderRadius:8, marginTop:10, flexWrap:"wrap" },
+  pubBarOn: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, background:"#dcfce7", padding:"10px 12px", borderRadius:8, marginTop:10, flexWrap:"wrap" },
+  pubText: { fontSize:13, fontWeight:600, color:"#3f3f2e" },
+  pendRow: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, padding:"10px 0", borderBottom:"1px solid #eef2ee", flexWrap:"wrap" },
+  pendActions: { display:"flex", gap:6, flexWrap:"wrap" },
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

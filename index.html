@@ -58,7 +58,6 @@ const SUPABASE_KEY = "sb_publishable_Az_gUJnuPo61SJ9VTq8VTg_vHPWNk1y";
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const MAX_PLAYERS = 22;
-const MATMID_THRESHOLD = 10; // מספר הגעות מצטבר (attended=true) כדי להיחשב "מתמיד"
 
 // ==== עזרי זמן ====
 const fmt = (ts) => new Date(ts).toLocaleString("he-IL", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -107,18 +106,27 @@ function findDuplicate(name, phone, email, roster, pending, excludeReqId){
 }
 
 // ==== מיון עדיפות ====
-// גניגרי+ותיק > גניגרי > ותיק > מתמיד (הגיע בפועל ל-MATMID_THRESHOLD משחקים ומעלה, מצטבר) > רגיל
-function tierRank(reg, roster, attendanceCounts){
+// שכבה: גניגרי+ותיק > גניגרי > ותיק > רגיל. בתוך כל שכבה — מספר ההגעות המצטבר
+// בפועל (attended=true) קובע: כל משחק שהשחקן הגיע אליו מוסיף לו עדיפות, בלי
+// תקרה/סף קבוע — לא "מתמיד כן/לא" חד-פעמי אלא דירוג רציף שממשיך להצטבר.
+function tierRank(reg, roster){
   const p = roster.find(r=>r.id===reg.player_id);
-  if(!p) return 1;
-  if (p.is_ganigari && p.is_vatik) return 5;
-  if (p.is_ganigari) return 4;
-  if (p.is_vatik) return 3;
-  const attended = (attendanceCounts && attendanceCounts[reg.player_id]) || 0;
-  if (attended >= MATMID_THRESHOLD) return 2;
-  return 1;
+  if(!p) return 0;
+  if (p.is_ganigari && p.is_vatik) return 3;
+  if (p.is_ganigari) return 2;
+  if (p.is_vatik) return 1;
+  return 0;
 }
-function sortRegs(regs, roster, attendanceCounts){ return [...regs].sort((a,b)=>{ const ra=tierRank(a,roster,attendanceCounts),rb=tierRank(b,roster,attendanceCounts); if(ra!==rb) return rb-ra; return a.ts-b.ts; }); }
+function sortRegs(regs, roster, attendanceCounts){
+  return [...regs].sort((a,b) => {
+    const ra=tierRank(a,roster), rb=tierRank(b,roster);
+    if (ra!==rb) return rb-ra;
+    const ca=(attendanceCounts && attendanceCounts[a.player_id]) || 0;
+    const cb=(attendanceCounts && attendanceCounts[b.player_id]) || 0;
+    if (ca!==cb) return cb-ca;
+    return a.ts-b.ts;
+  });
+}
 
 // קריאת RPC ניהולית עם חשיפת שגיאות — כדי שכישלון בשרת (למשל אישורים שפגו
 // אחרי מעבר בין מסך שחקן לניהול) לא ייבלע בשקט ויראה כאילו "כלום לא קרה".

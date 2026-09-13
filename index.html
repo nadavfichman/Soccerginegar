@@ -16,6 +16,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: #f2f6f0; }
@@ -1307,9 +1308,28 @@ function AdminRoster({ roster, admins, refresh, cred }) {
   };
   const statusClass = p => (p.is_ganigari && p.is_vatik) ? "badge gv" : p.is_ganigari ? "badge g" : p.is_vatik ? "badge v" : "badge r";
 
+  const exportExcel = () => {
+    const rows = sorted.map((p,i) => ({
+      "#": i+1,
+      "שם": p.name,
+      "טלפון": p.phone,
+      "מייל": p.email || "",
+      "סטטוס": statusLabel(p),
+      "מנהל": admins.some(a=>a.phone===p.phone) ? "כן" : "לא",
+      "תאריך אישור": p.approved_at ? dateOnly(p.approved_at) : "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "שחקנים");
+    XLSX.writeFile(wb, "שחקנים מאושרים.xlsx");
+  };
+
   return (
     <section style={S.card}>
-      <h2 style={S.h2}>שחקנים מאושרים ({roster.length})</h2>
+      <div style={S.rowBetween}>
+        <h2 style={S.h2}>שחקנים מאושרים ({roster.length})</h2>
+        <button className="btn small" onClick={exportExcel}>📥 ייצוא לאקסל</button>
+      </div>
       <p style={S.hint}>עדיפות: גניגרי+ותיק (גבוהה ביותר) ← גניגרי ← ותיק ← רגיל. שחקן יכול להיות גם גניגרי וגם ותיק בו-זמנית.</p>
 
       <div style={S.formBox}>

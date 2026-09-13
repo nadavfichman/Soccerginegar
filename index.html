@@ -1204,6 +1204,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
   const [addId,setAddId]=useState("");
+  const [copiedMsg,setCopiedMsg]=useState("");
   const isOpen = now >= game.opensAt;
   const credArgs = { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null };
 
@@ -1247,6 +1248,21 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
   };
   const shareWa = () => window.open("https://wa.me/?text="+encodeURIComponent(buildWa()), "_blank");
 
+  // פורמט של לוג צ'אט וואטסאפ ([D/M, HH:MM] שם: מגיע) — לא לשליחה, אלא להעתקה
+  // כדי שאפליקציה חיצונית אחרת שמזהה נוכחות לפי הפורמט הזה תוכל לקלוט את הרשימה
+  const buildWaLog = () => main.map(r => {
+    const d = new Date(r.ts);
+    const dateStr = (d.getMonth()+1)+"/"+d.getDate();
+    const timeStr = String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+    return "["+dateStr+", "+timeStr+"] "+nameOf(r.player_id)+": מגיע";
+  }).join("\n");
+  const copyWaLog = async () => {
+    const text = buildWaLog();
+    try { await navigator.clipboard.writeText(text); setCopiedMsg("הועתק ללוח! ✓"); }
+    catch { window.prompt("העתק ידנית (Ctrl+C):", text); setCopiedMsg(""); }
+    setTimeout(()=>setCopiedMsg(""), 2500);
+  };
+
   return (
     <div style={S.adminGame}>
       <div style={S.rowBetween}>
@@ -1262,6 +1278,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
         <button className={game.rosterPublished?"btn small":"btn primary small"} onClick={()=>setGameField({roster_published:!game.rosterPublished})}>{game.rosterPublished?"הסתר משתתפים":"פרסם משתתפים"}</button>
       </div>
       <button className="btn waBtn" onClick={shareWa} disabled={main.length===0}>שלח רשימה לוואטסאפ</button>
+      <button className="btn small" style={{marginTop:6,width:"100%"}} onClick={copyWaLog} disabled={main.length===0}>{copiedMsg || "📋 העתק רשימה בפורמט לוג וואטסאפ"}</button>
       <div style={S.addRow}>
         <select style={S.selectSm} value={addId} onChange={e=>setAddId(e.target.value)}>
           <option value="">+ הוסף שחקן ידנית…</option>

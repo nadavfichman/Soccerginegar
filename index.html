@@ -1192,7 +1192,11 @@ function AdminRoster({ roster, admins, refresh, cred }) {
     await db.rpc(rpc, { input_player_id: id, input_value: val, input_pw: cred.pw });
     await refresh();
   };
-  const remove = async (id) => { await db.rpc("admin_delete_player", { input_player_id: id, input_pw: cred.pw }); await refresh(); };
+  const remove = async (id, name) => {
+    if (!window.confirm("להסיר את " + name + " מרשימת השחקנים? הפעולה תמחק גם את כל ההרשמות שלו למשחקים, ולא ניתנת לביטול.")) return;
+    await db.rpc("admin_delete_player", { input_player_id: id, input_pw: cred.pw });
+    await refresh();
+  };
   const updateName = async (id, newNameRaw, otherErrSetter) => {
     if (!validName(newNameRaw)) { otherErrSetter("נא להזין שם פרטי ושם משפחה"); return false; }
     const nn = normName(newNameRaw);
@@ -1265,7 +1269,7 @@ function AdminRoster({ roster, admins, refresh, cred }) {
                     {isAdmin && <span className="badge a">מנהל</span>}
                   </div>
                 </div>
-                <button className="mini danger" onClick={()=>remove(p.id)}>✕</button>
+                <button className="mini danger" onClick={()=>remove(p.id, p.name)}>✕</button>
               </div>
               <div style={S.flagRow}>
                 <label style={S.flagLabel}><input type="checkbox" checked={!!p.is_ganigari} onChange={e=>toggleFlag(p.id,"is_ganigari",e.target.checked)} /> גניגרי</label>

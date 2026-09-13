@@ -34,6 +34,7 @@
   .btn:disabled { opacity: .5; cursor: not-allowed; }
   .mini { width: 28px; height: 28px; border-radius: 7px; border: 1px solid #cbd5cb; background: #fff; cursor: pointer; font-size: 12px; padding: 0; }
   .mini.danger { color: #dc2626; border-color: #fca5a5; }
+  .mini.ok { background: #16a34a; color: #fff; border-color: #16a34a; }
   .badgeCount { background: #f59e0b; color: #fff; font-size: 13px; padding: 1px 9px; border-radius: 20px; }
   .badge { display:inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; }
   .badge.gv { background: #166534; color: #fff; }
@@ -57,6 +58,7 @@ const SUPABASE_KEY = "sb_publishable_Az_gUJnuPo61SJ9VTq8VTg_vHPWNk1y";
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const MAX_PLAYERS = 22;
+const MATMID_THRESHOLD = 10; // מספר הגעות מצטבר (attended=true) כדי להיחשב "מתמיד"
 
 // ==== עזרי זמן ====
 const fmt = (ts) => new Date(ts).toLocaleString("he-IL", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -105,15 +107,18 @@ function findDuplicate(name, phone, email, roster, pending, excludeReqId){
 }
 
 // ==== מיון עדיפות ====
-function tierRank(reg, roster){
+// גניגרי+ותיק > גניגרי > ותיק > מתמיד (הגיע בפועל ל-MATMID_THRESHOLD משחקים ומעלה, מצטבר) > רגיל
+function tierRank(reg, roster, attendanceCounts){
   const p = roster.find(r=>r.id===reg.player_id);
   if(!p) return 1;
-  if (p.is_ganigari && p.is_vatik) return 4;
-  if (p.is_ganigari) return 3;
-  if (p.is_vatik) return 2;
+  if (p.is_ganigari && p.is_vatik) return 5;
+  if (p.is_ganigari) return 4;
+  if (p.is_vatik) return 3;
+  const attended = (attendanceCounts && attendanceCounts[reg.player_id]) || 0;
+  if (attended >= MATMID_THRESHOLD) return 2;
   return 1;
 }
-function sortRegs(regs, roster){ return [...regs].sort((a,b)=>{ const ra=tierRank(a,roster),rb=tierRank(b,roster); if(ra!==rb) return rb-ra; return a.ts-b.ts; }); }
+function sortRegs(regs, roster, attendanceCounts){ return [...regs].sort((a,b)=>{ const ra=tierRank(a,roster,attendanceCounts),rb=tierRank(b,roster,attendanceCounts); if(ra!==rb) return rb-ra; return a.ts-b.ts; }); }
 
 // קריאת RPC ניהולית עם חשיפת שגיאות — כדי שכישלון בשרת (למשל אישורים שפגו
 // אחרי מעבר בין מסך שחקן לניהול) לא ייבלע בשקט ויראה כאילו "כלום לא קרה".
@@ -135,7 +140,7 @@ const api = {
       db.from("admins").select("*"),
       db.from("admin_requests").select("*"),
       db.from("games").select("*"),
-      db.from("registrations").select("id, game_id, player_id, ts"),
+      db.from("registrations").select("id, game_id, player_id, ts, attended"),
     ]);
     return {
       roster: players.data || [],
@@ -274,8 +279,12 @@ function App() {
   const gamesWithRegs = games.map(g => ({
     id: g.id, kickoff: g.kickoff, opensAt: g.opens_at,
     published: g.published, rosterPublished: g.roster_published,
-    registrations: regs.filter(r => r.game_id === g.id).map(r => ({ playerId: r.player_id, ts: r.ts })),
+    registrations: regs.filter(r => r.game_id === g.id).map(r => ({ playerId: r.player_id, ts: r.ts, attended: !!r.attended })),
   }));
+
+  // ספירת הגעות מצטברת לכל שחקן (attended=true בכל המשחקים, לא רק בזה שנבחר) — קובעת עדיפות "מתמיד"
+  const attendanceCounts = {};
+  regs.forEach(r => { if (r.attended) attendanceCounts[r.player_id] = (attendanceCounts[r.player_id]||0) + 1; });
 
   if (!loaded || !identityLoaded) return <div style={S.loading}>טוען…</div>;
 
@@ -284,10 +293,10 @@ function App() {
       <Header view={view} setView={setView} />
       {err && <div style={S.errBar}>{err}</div>}
       {view === "player" ? (
-        <PlayerView {...{ roster, pending, games: gamesWithRegs, session, identity, now, refresh, loadIdentity }} />
+        <PlayerView {...{ roster, pending, games: gamesWithRegs, session, identity, now, refresh, loadIdentity, attendanceCounts }} />
       ) : (
         <AdminView {...{ roster, pending, games: gamesWithRegs, now, role, setRole,
-          admins, myPhone, refresh, session, cred, setCred }} />
+          admins, myPhone, refresh, session, cred, setCred, attendanceCounts }} />
       )}
       <footer style={S.footer}>כדורגל גניגרי ושות' · ניהול רישום ורשימות</footer>
     </div>
@@ -376,7 +385,7 @@ function InstallButton() {
 // ============================================================================
 // צד שחקן
 // ============================================================================
-function PlayerView({ roster, pending, games, session, identity, now, refresh, loadIdentity }) {
+function PlayerView({ roster, pending, games, session, identity, now, refresh, loadIdentity, attendanceCounts }) {
   const signOut = async () => { try { localStorage.removeItem("pendingJoin"); } catch {} await db.auth.signOut(); await loadIdentity(); };
 
   // אין חיבור מאומת כלל — טופס הצטרפות מלא (שם+טלפון+מייל) לפני האימות
@@ -413,7 +422,7 @@ function PlayerView({ roster, pending, games, session, identity, now, refresh, l
       </section>
       {nextToOpen && <CountdownBanner game={nextToOpen} now={now} />}
       {visible.length===0 && <div style={S.empty}>אין כרגע משחקים מפורסמים.</div>}
-      {visible.map(g => <GameCard key={g.id} game={g} roster={roster} me={me} now={now} refresh={refresh} />)}
+      {visible.map(g => <GameCard key={g.id} game={g} roster={roster} me={me} now={now} refresh={refresh} attendanceCounts={attendanceCounts} />)}
     </main>
   );
 }
@@ -563,9 +572,9 @@ function CountdownBanner({ game, now }) {
 }
 function CdUnit({val,label}){ return <div style={S.cdUnit}><div style={S.cdNum}>{val}</div><div style={S.cdLabel}>{label}</div></div>; }
 
-function GameCard({ game, roster, me, now, refresh }) {
+function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
   const isOpen = now >= game.opensAt;
-  const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts})), roster);
+  const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts})), roster, attendanceCounts);
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
   const myReg = game.registrations.find(r=>r.playerId===me.id);
   const rosterPublished = game.rosterPublished === true;
@@ -645,7 +654,7 @@ function PlayerRosterList({ main, wait, roster, meId }) {
 // ============================================================================
 // צד ניהול
 // ============================================================================
-function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone, refresh, session, cred, setCred }) {
+function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone, refresh, session, cred, setCred, attendanceCounts }) {
   const [pw,setPw]=useState(""); const [pin,setPin]=useState("");
   const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
   const [hint,setHint]=useState(null); // 'super' | 'admin' | null — רמז בלבד, לא מעניק הרשאה
@@ -717,7 +726,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
           <PendingRequests {...{ pending, roster, refresh, cred }} />
         </>
       )}
-      <AdminGames {...{ games, roster, now, refresh, cred }} />
+      <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts }} />
       {isSuper && <AdminRoster {...{ roster, admins, refresh, cred }} />}
     </main>
   );
@@ -1123,7 +1132,7 @@ function PendingRequests({ pending, roster, refresh, cred }) {
   );
 }
 
-function AdminGames({ games, roster, now, refresh, cred }) {
+function AdminGames({ games, roster, now, refresh, cred, attendanceCounts }) {
   const [showNew,setShowNew]=useState(false);
   const addGame = async (g) => {
     await callAdmin("admin_create_game", { input_kickoff: g.kickoff, input_opens_at: g.opensAt, input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
@@ -1137,7 +1146,7 @@ function AdminGames({ games, roster, now, refresh, cred }) {
       </div>
       {showNew && <NewGameForm onAdd={addGame} />}
       {[...games].sort((a,b)=>a.kickoff-b.kickoff).map(g=>(
-        <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} />
+        <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} />
       ))}
     </section>
   );
@@ -1157,8 +1166,8 @@ function NewGameForm({ onAdd }) {
   );
 }
 
-function AdminGameRow({ game, roster, now, refresh, cred }) {
-  const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts})), roster);
+function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
+  const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts,attended:r.attended})), roster, attendanceCounts);
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
   const [addId,setAddId]=useState("");
@@ -1177,6 +1186,10 @@ function AdminGameRow({ game, roster, now, refresh, cred }) {
     setAddId(""); await refresh();
   };
   const deleteGame = async () => { await callAdmin("admin_delete_game", { input_game_id: game.id, ...credArgs }); await refresh(); };
+  const setAttendance = async (pid, attended) => {
+    await callAdmin("admin_set_attendance", { input_game_id: game.id, input_player_id: pid, input_attended: attended, ...credArgs });
+    await refresh();
+  };
   const bump = async (pid, dir) => {
     const idx = sorted.findIndex(r=>r.player_id===pid);
     const swapWith = sorted[idx+dir]; if(!swapWith) return;
@@ -1215,12 +1228,13 @@ function AdminGameRow({ game, roster, now, refresh, cred }) {
       </div>
       <div style={S.adminList}>
         <div style={S.listTitle}>משתתפים ({main.length}/{MAX_PLAYERS})</div>
-        {main.map((r,i)=><EditableRow key={r.player_id} i={i+1} name={nameOf(r.player_id)} onUp={()=>bump(r.player_id,-1)} onDown={()=>bump(r.player_id,1)} onRemove={()=>removeReg(r.player_id)} />)}
+        <p style={{...S.hint,fontSize:12,marginTop:-4}}>אחרי המשחק — סמן ✓ ליד מי שהגיע בפועל, כדי שיצטבר לו עדיפות "מתמיד".</p>
+        {main.map((r,i)=><EditableRow key={r.player_id} i={i+1} name={nameOf(r.player_id)} attended={r.attended} onToggleAttended={()=>setAttendance(r.player_id, !r.attended)} onUp={()=>bump(r.player_id,-1)} onDown={()=>bump(r.player_id,1)} onRemove={()=>removeReg(r.player_id)} />)}
         {main.length===0 && <div style={S.liEmpty}>אין נרשמים</div>}
         {wait.length>0 && (
           <>
             <div style={{...S.listTitle,color:"#b45309",marginTop:10}}>רשימת המתנה ({wait.length})</div>
-            {wait.map((r,i)=><EditableRow key={r.player_id} i={i+1} wait name={nameOf(r.player_id)} onUp={()=>bump(r.player_id,-1)} onDown={()=>bump(r.player_id,1)} onRemove={()=>removeReg(r.player_id)} />)}
+            {wait.map((r,i)=><EditableRow key={r.player_id} i={i+1} wait name={nameOf(r.player_id)} attended={r.attended} onToggleAttended={()=>setAttendance(r.player_id, !r.attended)} onUp={()=>bump(r.player_id,-1)} onDown={()=>bump(r.player_id,1)} onRemove={()=>removeReg(r.player_id)} />)}
           </>
         )}
       </div>
@@ -1228,11 +1242,12 @@ function AdminGameRow({ game, roster, now, refresh, cred }) {
   );
 }
 
-function EditableRow({ i, name, onUp, onDown, onRemove, wait }) {
+function EditableRow({ i, name, onUp, onDown, onRemove, wait, attended, onToggleAttended }) {
   return (
     <div style={wait?S.editRowWait:S.editRow}>
       <span style={S.num}>{i}</span><span style={S.pname}>{name}</span>
       <div style={{display:"flex",gap:4}}>
+        <button className={attended?"mini ok":"mini"} title="הגיע בפועל" onClick={onToggleAttended}>✓</button>
         <button className="mini" onClick={onUp}>▲</button>
         <button className="mini" onClick={onDown}>▼</button>
         <button className="mini danger" onClick={onRemove}>✕</button>

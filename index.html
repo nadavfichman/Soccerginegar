@@ -1198,6 +1198,10 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
     await callAdmin("admin_set_attendance", { input_game_id: game.id, input_player_id: pid, input_attended: attended, ...credArgs });
     await refresh();
   };
+  const markAllAttended = async () => {
+    await Promise.all(main.map(r => callAdmin("admin_set_attendance", { input_game_id: game.id, input_player_id: r.player_id, input_attended: true, ...credArgs })));
+    await refresh();
+  };
   const bump = async (pid, dir) => {
     const idx = sorted.findIndex(r=>r.player_id===pid);
     const swapWith = sorted[idx+dir]; if(!swapWith) return;
@@ -1235,8 +1239,11 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
         <button className="btn small" onClick={addReg} disabled={!addId}>הוסף</button>
       </div>
       <div style={S.adminList}>
-        <div style={S.listTitle}>משתתפים ({main.length}/{MAX_PLAYERS})</div>
-        <p style={{...S.hint,fontSize:12,marginTop:-4}}>אחרי המשחק — סמן ✓ ליד מי שהגיע בפועל, כדי שיצטבר לו עדיפות "מתמיד".</p>
+        <div style={S.rowBetween}>
+          <div style={S.listTitle}>משתתפים ({main.length}/{MAX_PLAYERS})</div>
+          <button className="btn small" onClick={markAllAttended} disabled={main.length===0}>✓ סמן הכל כהגיעו</button>
+        </div>
+        <p style={{...S.hint,fontSize:12,marginTop:-4}}>אחרי המשחק — סמן הכל, ואז בטל ✓ רק למי שלא הגיע בפועל.</p>
         {main.map((r,i)=><EditableRow key={r.player_id} i={i+1} name={nameOf(r.player_id)} attended={r.attended} onToggleAttended={()=>setAttendance(r.player_id, !r.attended)} onUp={()=>bump(r.player_id,-1)} onDown={()=>bump(r.player_id,1)} onRemove={()=>removeReg(r.player_id)} />)}
         {main.length===0 && <div style={S.liEmpty}>אין נרשמים</div>}
         {wait.length>0 && (

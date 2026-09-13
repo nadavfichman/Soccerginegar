@@ -735,7 +735,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
         </>
       )}
       <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts }} />
-      {isSuper && <AdminRoster {...{ roster, admins, refresh, cred }} />}
+      {isSuper && <AdminRoster {...{ roster, admins, refresh, cred, attendanceCounts }} />}
     </main>
   );
 }
@@ -1271,7 +1271,7 @@ function EditableRow({ i, name, onUp, onDown, onRemove, wait, attended, onToggle
   );
 }
 
-function AdminRoster({ roster, admins, refresh, cred }) {
+function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
   const [name,setName]=useState(""); const [phone,setPhone]=useState("");
   const [newGanigari,setNewGanigari]=useState(false); const [newVatik,setNewVatik]=useState(false);
   const [err,setErr]=useState("");
@@ -1345,6 +1345,7 @@ function AdminRoster({ roster, admins, refresh, cred }) {
       "טלפון": p.phone,
       "מייל": p.email || "",
       "סטטוס": statusLabel(p),
+      "מספר הגעות": (attendanceCounts && attendanceCounts[p.id]) || 0,
       "מנהל": admins.some(a=>a.phone===p.phone) ? "כן" : "לא",
       "תאריך אישור": p.approved_at ? dateOnly(p.approved_at) : "",
     }));
@@ -1399,6 +1400,7 @@ function AdminRoster({ roster, admins, refresh, cred }) {
                   <div style={{marginTop:4,display:"flex",gap:6,flexWrap:"wrap"}}>
                     <span className={statusClass(p)}>{statusLabel(p)}</span>
                     {isAdmin && <span className="badge a">מנהל</span>}
+                    <span className="badge r">{(attendanceCounts && attendanceCounts[p.id]) || 0} הגעות</span>
                   </div>
                 </div>
                 <button className="mini danger" onClick={()=>remove(p.id, p.name)}>✕</button>

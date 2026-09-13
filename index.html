@@ -4,6 +4,12 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
 <title>כדורגל גניגרי ושות'</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#166534">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="כדורגל גניגרי">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -308,10 +314,61 @@ function Header({ view, setView }) {
         <span style={S.ball} onClick={handleBallTap}>⚽</span>
         <div><div style={S.brandTitle}>כדורגל גניגרי ושות'</div><div style={S.brandSub}>רישום למשחקים</div></div>
       </div>
-      {view === "admin" && (
-        <button style={S.backBtn} onClick={()=>setView("player")}>→ חזרה למסך שחקן</button>
-      )}
+      <div style={{display:"flex", gap:8, alignItems:"center"}}>
+        <InstallButton />
+        {view === "admin" && (
+          <button style={S.backBtn} onClick={()=>setView("player")}>→ חזרה למסך שחקן</button>
+        )}
+      </div>
     </header>
+  );
+}
+
+// כפתור "התקן אפליקציה" — באנדרואיד/כרום מפעיל את דיאלוג ההתקנה המובנה של הדפדפן.
+// ב-iOS/Safari אין API כזה בכלל, אז מציג הנחיה ידנית (שיתוף ← הוסף למסך הבית).
+// לא מוצג כלל אם האפליקציה כבר מותקנת (display-mode: standalone).
+function InstallButton() {
+  const [installable, setInstallable] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [showIOSHelp, setShowIOSHelp] = useState(false);
+  const [standalone, setStandalone] = useState(true);
+
+  useEffect(() => {
+    const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    setStandalone(isStandalone);
+    if (isStandalone) return;
+    setIsIOS(/iPad|iPhone|iPod/.test(navigator.userAgent || "") && !window.MSStream);
+    if (window.__installPrompt) setInstallable(true);
+    const onInstallable = () => setInstallable(true);
+    const onInstalled = () => { setInstallable(false); setStandalone(true); };
+    window.addEventListener("pwa-installable", onInstallable);
+    window.addEventListener("pwa-installed", onInstalled);
+    return () => { window.removeEventListener("pwa-installable", onInstallable); window.removeEventListener("pwa-installed", onInstalled); };
+  }, []);
+
+  const install = async () => {
+    if (!window.__installPrompt) return;
+    window.__installPrompt.prompt();
+    try { await window.__installPrompt.userChoice; } catch {}
+    window.__installPrompt = null;
+    setInstallable(false);
+  };
+
+  if (standalone || (!installable && !isIOS)) return null;
+
+  return (
+    <>
+      <button style={S.installBtn} onClick={installable ? install : ()=>setShowIOSHelp(true)}>📲 התקן</button>
+      {showIOSHelp && (
+        <div style={S.iosHelpOverlay} onClick={()=>setShowIOSHelp(false)}>
+          <div style={S.iosHelpBox} onClick={e=>e.stopPropagation()}>
+            <h3 style={S.centerTitle}>התקנה על מסך הבית</h3>
+            <p style={S.centerText}>לחץ על כפתור השיתוף <b>⬆️</b> בסרגל הדפדפן של Safari, ואז בחר <b>"הוסף למסך הבית"</b>.</p>
+            <button className="btn primary" style={{width:"100%"}} onClick={()=>setShowIOSHelp(false)}>הבנתי</button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1395,6 +1452,9 @@ const S = {
   tabs: { display:"flex", gap:6, background:"rgba(255,255,255,.15)", padding:4, borderRadius:10 },
   adminIconBtn: { background:"rgba(255,255,255,.15)", border:"none", color:"#fff", width:34, height:34, borderRadius:8, fontSize:16, cursor:"pointer", opacity:.75 },
   backBtn: { background:"rgba(255,255,255,.15)", border:"none", color:"#fff", padding:"7px 14px", borderRadius:8, fontSize:13, fontWeight:600, cursor:"pointer" },
+  installBtn: { background:"rgba(255,255,255,.15)", border:"none", color:"#fff", padding:"7px 12px", borderRadius:8, fontSize:13, fontWeight:600, cursor:"pointer" },
+  iosHelpOverlay: { position:"fixed", inset:0, background:"rgba(0,0,0,.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:50, padding:16 },
+  iosHelpBox: { background:"#fff", borderRadius:14, padding:20, maxWidth:340, width:"100%" },
   errBar: { background:"#fee2e2", color:"#b91c1c", padding:"10px 14px", textAlign:"center", fontSize:13, fontWeight:700 },
   main: { padding:14, display:"flex", flexDirection:"column", gap:14 },
   card: { background:"#fff", borderRadius:14, padding:16, boxShadow:"0 1px 3px rgba(0,0,0,.06)" },
@@ -1470,6 +1530,24 @@ const S = {
 };
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+<script>
+  // רישום Service Worker ולכידת אירוע ההתקנה — נדרשים כדי שהדפדפן (בעיקר אנדרואיד/כרום)
+  // יאפשר "הוספה למסך הבית" עם אייקון קבוע כמו אפליקציה. ב-iOS/Safari אין API כזה בכלל —
+  // שם הכפתור בתוך האפליקציה מציג הנחיה ידנית במקום.
+  window.__installPrompt = null;
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    window.__installPrompt = e;
+    window.dispatchEvent(new Event("pwa-installable"));
+  });
+  window.addEventListener("appinstalled", () => {
+    window.__installPrompt = null;
+    window.dispatchEvent(new Event("pwa-installed"));
+  });
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+  }
 </script>
 </body>
 </html>

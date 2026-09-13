@@ -1323,14 +1323,17 @@ function AdminRoster({ roster, admins, refresh, cred }) {
         {err && <p style={S.errText}>{err}</p>}
       </div>
 
-      <div style={{marginTop:12}}>
-        {sorted.map(p=>{
+      <div style={S.rosterGrid}>
+        {sorted.map((p,i)=>{
           const isAdmin = admins.some(a=>a.phone===p.phone);
           return (
-            <div key={p.id} style={S.rosterRowWrap}>
+            <div key={p.id} style={S.rosterCard}>
               <div style={S.rosterRow}>
                 <div>
-                  <NameEditor player={p} onSave={updateName} />
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={S.num}>{i+1}</span>
+                    <NameEditor player={p} onSave={updateName} />
+                  </div>
                   <PhoneEditor player={p} onSave={updatePhone} />
                   <EmailEditor player={p} onSave={updateEmail} />
                   {p.approved_at && <div style={S.subLine}>אושר ב-{dateOnly(p.approved_at)}</div>}
@@ -1520,6 +1523,8 @@ const S = {
   editRowWait: { display:"flex", alignItems:"center", gap:8, padding:"6px 8px", background:"#fef9ee", borderRadius:8, marginBottom:4, justifyContent:"space-between" },
   rosterRow: { display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 10px", borderBottom:"1px solid #eef2ee" },
   rosterRowWrap: { padding:"8px 10px", borderBottom:"1px solid #eef2ee" },
+  rosterGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))", gap:8, marginTop:12 },
+  rosterCard: { background:"#f8faf8", border:"1px solid #eef2ee", borderRadius:10, overflow:"hidden" },
   flagRow: { display:"flex", gap:14, alignItems:"center", marginTop:8, flexWrap:"wrap" },
   flagLabel: { display:"flex", alignItems:"center", gap:5, fontSize:13, cursor:"pointer" },
   pubBar: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, background:"#fef3c7", padding:"10px 12px", borderRadius:8, marginTop:10, flexWrap:"wrap" },

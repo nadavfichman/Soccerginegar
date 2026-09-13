@@ -1089,25 +1089,47 @@ function PendingRequests({ pending, roster, refresh, cred }) {
   const rejectedList = pending.filter(r => r.status === "rejected")
     .sort((a,b) => new Date(b.decided_at||0) - new Date(a.decided_at||0));
 
+  // אחרי אישור/דחייה — מציע לשלוח לשחקן הודעת וואטסאפ מוכנה, בלחיצה אחת
+  const [justDecided,setJustDecided] = useState(null); // { req, decision: 'approved'|'rejected' }
+
   const approve = async (req, isGanigari, isVatik) => {
     const dupErr = findDuplicate(req.name, req.phone, req.email, roster, pending, req.id);
     if (dupErr) { window.alert("לא ניתן לאשר — " + dupErr + " בדוק אם זה אותו שחקן שנרשם בטעות פעם נוספת."); return; }
     const { data, error } = await db.rpc("approve_player_request", { input_request_id: req.id, input_is_ganigari: isGanigari, input_is_vatik: isVatik, input_pw: cred.pw });
     if (error) { window.alert("שגיאה באישור — נסה להתחבר שוב."); return; }
     if (data === "phone_taken") { window.alert("מספר הטלפון הזה כבר קיים במערכת."); return; }
+    setJustDecided({ req, decision: "approved" });
     await refresh();
   };
   const reject = async (req) => {
     await callAdmin("reject_player_request", { input_request_id: req.id, input_pw: cred.pw });
+    setJustDecided({ req, decision: "rejected" });
     await refresh();
   };
   const reconsider = async (req) => {
     await callAdmin("reconsider_player_request", { input_request_id: req.id, input_pw: cred.pw });
     await refresh();
   };
+  const sendDecisionWa = () => {
+    const { req, decision } = justDecided;
+    const text = decision === "approved"
+      ? "היי " + req.name + "! אושרת להצטרף לכדורגל גניגרי ושות' ✅ מעכשיו תוכל להירשם למשחקים באפליקציה."
+      : "היי " + req.name + ", בקשת ההצטרפות שלך לכדורגל גניגרי ושות' לא אושרה הפעם. לשאלות, פנה למנהל.";
+    window.open("https://wa.me/972"+req.phone.replace(/^0/,"")+"?text="+encodeURIComponent(text), "_blank");
+    setJustDecided(null);
+  };
 
   return (
     <>
+      {justDecided && (
+        <section style={{...S.card,...S.cardHot}}>
+          <p style={S.hint}>{justDecided.decision==="approved"?"✅ "+justDecided.req.name+" אושר.":"⛔ "+justDecided.req.name+" נדחה."} לשלוח לו הודעה בוואטסאפ?</p>
+          <div style={{display:"flex",gap:8,marginTop:6}}>
+            <button className="btn waBtn" style={{marginTop:0}} onClick={sendDecisionWa}>📤 שלח וואטסאפ</button>
+            <button className="btn small" onClick={()=>setJustDecided(null)}>לא עכשיו</button>
+          </div>
+        </section>
+      )}
       <section style={{...S.card,...(pendingList.length?S.cardHot:{})}}>
         <h2 style={S.h2}>בקשות ממתינות {pendingList.length>0 && <span className="badgeCount">{pendingList.length}</span>}</h2>
         {pendingList.length===0 && <p style={S.hint}>אין בקשות חדשות.</p>}

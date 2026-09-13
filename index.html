@@ -83,7 +83,7 @@ function findDuplicate(name, phone, email, roster, pending, excludeReqId){
 
   const nameMatch = allRecords.find(r=>normName(r.name)===nn);
   // אם הרשומה הקיימת בלי מייל מקושר (למשל שחקן שהוזן ידנית על ידי האדמין) — לא חוסמים,
-  // כדי לאפשר לו להשלים את המייל שלו ולהיקשר אוטומטית (ראו tryClaimByNamePhone).
+  // כדי לאפשר לו להשלים את המייל שלו ולהיקשר אוטומטית (ראו submit_player_request).
   if (nameMatch && nameMatch.email && !sameEmail(nameMatch.email, email)) return "השם הזה כבר קיים במערכת עם כתובת מייל אחרת. פנה למנהל.";
 
   const phoneMatch = allRecords.find(r=>r.phone===np);
@@ -404,44 +404,16 @@ function AutoSubmitScreen({ session, refresh, loadIdentity, roster, pending }) {
   const [state,setState]=useState("submitting"); // submitting | needProfile | error
   const [name,setName]=useState(""); const [phone,setPhone]=useState(""); const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
 
-  // מוצא שחקן קיים שהמייל שלו (שעודכן על ידי האדמין) תואם למייל הנוכחי, אבל עוד לא מקושר
-  // לזהות האימות הזו — למשל אחרי שהאדמין עדכן לו מייל חדש. אם נמצא — מקשר אוטומטית,
-  // בלי ליצור בקשה חדשה ובלי לדרוש אישור נוסף.
-  const tryRelinkByEmail = async () => {
-    const match = (roster||[]).find(p => sameEmail(p.email, session.user.email) && p.auth_user_id !== session.user.id);
-    if (!match) return false;
-    await db.from("players").update({ auth_user_id: session.user.id }).eq("id", match.id);
-    try { localStorage.removeItem("pendingJoin"); } catch {}
-    await refresh(); await loadIdentity();
-    return true;
-  };
-
-  // מוצא שחקן מאושר שהוזן ידנית על ידי האדמין (בלי מייל מקושר), ששם/טלפון שהוזנו כעת
-  // תואמים לו — ומשלים את הקישור: קובע לו את המייל הנוכחי ומקשר לזהות האימות. בדיוק
-  // המקרה המתועד: "טלפון כבר קיים כשחקן מאושר בלי מייל מקושר → מתקשר אוטומטית".
-  const tryClaimByNamePhone = async (name, phone) => {
-    const nn = normName(name), np = normPhone(phone);
-    const match = (roster||[]).find(p => !p.email && (normName(p.name)===nn || p.phone===np));
-    if (!match) return false;
-    await db.from("players").update({ email: session.user.email, auth_user_id: session.user.id }).eq("id", match.id);
-    try { localStorage.removeItem("pendingJoin"); } catch {}
-    await refresh(); await loadIdentity();
-    return true;
-  };
-
+  // הקישור לשחקן קיים (מוזן ידנית בלי מייל, או כבר מאושר אבל מסשן/מכשיר אחר)
+  // מטופל כולו בצד השרת בתוך submit_player_request — אין יותר צורך בעדכון ישיר
+  // של הטבלה מהדפדפן (ר' תיקון האבטחה: כל כתיבה עוברת דרך RPC מאומת).
   useEffect(() => {
     (async () => {
-      const relinked = await tryRelinkByEmail();
-      if (relinked) return;
-
       let raw = null;
       try { raw = localStorage.getItem("pendingJoin"); } catch {}
       if (!raw) { setState("needProfile"); return; }
       let data;
       try { data = JSON.parse(raw); } catch { setState("needProfile"); return; }
-
-      const claimed = await tryClaimByNamePhone(data.name, data.phone);
-      if (claimed) return;
 
       const dupErr = findDuplicate(data.name, data.phone, session.user.email, roster||[], pending||[], null);
       if (dupErr) { try { localStorage.removeItem("pendingJoin"); } catch {} setState("error"); setErr(dupErr); return; }
@@ -457,8 +429,6 @@ function AutoSubmitScreen({ session, refresh, loadIdentity, roster, pending }) {
     setErr("");
     if (!validName(name)) { setErr("נא להזין שם פרטי ושם משפחה"); return; }
     if (!validPhone(phone)) { setErr("מספר טלפון לא תקין"); return; }
-    const claimed = await tryClaimByNamePhone(name, phone);
-    if (claimed) return;
     const dupErr = findDuplicate(name, phone, session.user.email, roster||[], pending||[], null);
     if (dupErr) { setErr(dupErr); return; }
     setBusy(true);
@@ -662,6 +632,9 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
   }
 
   const isSuper = role === "super";
+  // האישורים שנשמרו בזיכרון מרגע הכניסה — מצורפים בשקט לכל קריאת RPC ניהולית,
+  // כדי שהשרת יאמת אותם מחדש בכל פעולה (ולא רק יסתמך על מצב הכפתורים בדפדפן).
+  const cred = isSuper ? { pw } : { phone: myPhone, pin };
   return (
     <main style={S.main}>
       <section style={S.roleBar}>
@@ -670,12 +643,12 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
       </section>
       {isSuper && (
         <>
-          <SuperAdminPanel {...{ admins, roster, refresh }} />
-          <PendingRequests {...{ pending, roster, refresh }} />
+          <SuperAdminPanel {...{ admins, roster, refresh, cred }} />
+          <PendingRequests {...{ pending, roster, refresh, cred }} />
         </>
       )}
-      <AdminGames {...{ games, roster, now, refresh }} />
-      {isSuper && <AdminRoster {...{ roster, admins, refresh }} />}
+      <AdminGames {...{ games, roster, now, refresh, cred }} />
+      {isSuper && <AdminRoster {...{ roster, admins, refresh, cred }} />}
     </main>
   );
 }
@@ -775,8 +748,8 @@ function RedeemInviteForm({ myPhone, setRole, refresh }) {
   );
 }
 
-function SuperAdminPanel({ admins, roster, refresh }) {
-  const removeAdmin = async (id) => { await db.from("admins").delete().eq("id",id); await refresh(); };
+function SuperAdminPanel({ admins, roster, refresh, cred }) {
+  const removeAdmin = async (id) => { await db.rpc("remove_admin", { input_admin_id: id, input_pw: cred.pw }); await refresh(); };
   return (
     <>
       <AdminInvites {...{ admins, roster, refresh }} />
@@ -987,7 +960,7 @@ function SuperSettings({ refresh }) {
   );
 }
 
-function PendingRequests({ pending, roster, refresh }) {
+function PendingRequests({ pending, roster, refresh, cred }) {
   const pendingList = pending.filter(r => r.status !== "rejected");
   const rejectedList = pending.filter(r => r.status === "rejected")
     .sort((a,b) => new Date(b.decided_at||0) - new Date(a.decided_at||0));
@@ -995,16 +968,17 @@ function PendingRequests({ pending, roster, refresh }) {
   const approve = async (req, isGanigari, isVatik) => {
     const dupErr = findDuplicate(req.name, req.phone, req.email, roster, pending, req.id);
     if (dupErr) { window.alert("לא ניתן לאשר — " + dupErr + " בדוק אם זה אותו שחקן שנרשם בטעות פעם נוספת."); return; }
-    await db.from("players").insert({ id:"p"+Date.now(), name:req.name, phone:req.phone, is_ganigari:isGanigari, is_vatik:isVatik, email:req.email, auth_user_id:req.auth_user_id });
-    await db.from("player_requests").delete().eq("id",req.id);
+    const { data, error } = await db.rpc("approve_player_request", { input_request_id: req.id, input_is_ganigari: isGanigari, input_is_vatik: isVatik, input_pw: cred.pw });
+    if (error) { window.alert("שגיאה באישור — נסה להתחבר שוב."); return; }
+    if (data === "phone_taken") { window.alert("מספר הטלפון הזה כבר קיים במערכת."); return; }
     await refresh();
   };
   const reject = async (req) => {
-    await db.from("player_requests").update({ status:"rejected", decided_at: new Date().toISOString() }).eq("id",req.id);
+    await db.rpc("reject_player_request", { input_request_id: req.id, input_pw: cred.pw });
     await refresh();
   };
   const reconsider = async (req) => {
-    await db.from("player_requests").update({ status:"pending", decided_at: null }).eq("id",req.id);
+    await db.rpc("reconsider_player_request", { input_request_id: req.id, input_pw: cred.pw });
     await refresh();
   };
 
@@ -1045,10 +1019,10 @@ function PendingRequests({ pending, roster, refresh }) {
   );
 }
 
-function AdminGames({ games, roster, now, refresh }) {
+function AdminGames({ games, roster, now, refresh, cred }) {
   const [showNew,setShowNew]=useState(false);
   const addGame = async (g) => {
-    await db.from("games").insert({ id:"g"+Date.now(), kickoff:g.kickoff, opens_at:g.opensAt, published:false, roster_published:false });
+    await db.rpc("admin_create_game", { input_kickoff: g.kickoff, input_opens_at: g.opensAt, input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
     setShowNew(false); await refresh();
   };
   return (
@@ -1059,7 +1033,7 @@ function AdminGames({ games, roster, now, refresh }) {
       </div>
       {showNew && <NewGameForm onAdd={addGame} />}
       {[...games].sort((a,b)=>a.kickoff-b.kickoff).map(g=>(
-        <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} />
+        <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} />
       ))}
     </section>
   );
@@ -1079,25 +1053,30 @@ function NewGameForm({ onAdd }) {
   );
 }
 
-function AdminGameRow({ game, roster, now, refresh }) {
+function AdminGameRow({ game, roster, now, refresh, cred }) {
   const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts})), roster);
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
   const [addId,setAddId]=useState("");
   const isOpen = now >= game.opensAt;
+  const credArgs = { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null };
 
-  const setGameField = async (patch) => { await db.from("games").update(patch).eq("id",game.id); await refresh(); };
-  const removeReg = async (pid) => { await db.rpc("admin_remove_registration", { input_game_id: game.id, input_player_id: pid }); await refresh(); };
+  const setGameField = async (patch) => {
+    if ("published" in patch) await db.rpc("admin_set_game_published", { input_game_id: game.id, input_published: patch.published, ...credArgs });
+    if ("roster_published" in patch) await db.rpc("admin_set_roster_published", { input_game_id: game.id, input_roster_published: patch.roster_published, ...credArgs });
+    await refresh();
+  };
+  const removeReg = async (pid) => { await db.rpc("admin_remove_registration", { input_game_id: game.id, input_player_id: pid, ...credArgs }); await refresh(); };
   const addReg = async () => {
     if (!addId || game.registrations.some(r=>r.playerId===addId)) return;
-    await db.rpc("admin_add_registration", { input_game_id: game.id, input_player_id: addId });
+    await db.rpc("admin_add_registration", { input_game_id: game.id, input_player_id: addId, ...credArgs });
     setAddId(""); await refresh();
   };
-  const deleteGame = async () => { await db.from("games").delete().eq("id",game.id); await refresh(); };
+  const deleteGame = async () => { await db.rpc("admin_delete_game", { input_game_id: game.id, ...credArgs }); await refresh(); };
   const bump = async (pid, dir) => {
     const idx = sorted.findIndex(r=>r.player_id===pid);
     const swapWith = sorted[idx+dir]; if(!swapWith) return;
-    await db.from("registrations").update({ ts: swapWith.ts - dir }).eq("game_id",game.id).eq("player_id",pid);
+    await db.rpc("admin_set_registration_ts", { input_game_id: game.id, input_player_id: pid, input_ts: swapWith.ts - dir, ...credArgs });
     await refresh();
   };
   const buildWa = () => {
@@ -1158,7 +1137,7 @@ function EditableRow({ i, name, onUp, onDown, onRemove, wait }) {
   );
 }
 
-function AdminRoster({ roster, admins, refresh }) {
+function AdminRoster({ roster, admins, refresh, cred }) {
   const [name,setName]=useState(""); const [phone,setPhone]=useState("");
   const [newGanigari,setNewGanigari]=useState(false); const [newVatik,setNewVatik]=useState(false);
   const [err,setErr]=useState("");
@@ -1171,16 +1150,21 @@ function AdminRoster({ roster, admins, refresh }) {
     if (roster.some(r=>r.phone===p)) { setErr("מספר קיים כבר ברשימה"); return; }
     const nn = normName(name);
     if (roster.some(r=>normName(r.name)===nn)) { setErr("שם זה כבר קיים ברשימה"); return; }
-    await db.from("players").insert({ id:"p"+Date.now(), name:name.trim(), phone:p, is_ganigari:newGanigari, is_vatik:newVatik });
+    const { data } = await db.rpc("admin_add_player", { input_name: name.trim(), input_phone: p, input_is_ganigari: newGanigari, input_is_vatik: newVatik, input_pw: cred.pw });
+    if (data === "phone_taken") { setErr("מספר קיים כבר ברשימה"); return; }
     setName(""); setPhone(""); setNewGanigari(false); setNewVatik(false); await refresh();
   };
-  const toggleFlag = async (id, field, val) => { await db.from("players").update({ [field]: val }).eq("id",id); await refresh(); };
-  const remove = async (id) => { await db.from("players").delete().eq("id",id); await refresh(); };
+  const toggleFlag = async (id, field, val) => {
+    const rpc = field === "is_ganigari" ? "admin_set_player_ganigari" : "admin_set_player_vatik";
+    await db.rpc(rpc, { input_player_id: id, input_value: val, input_pw: cred.pw });
+    await refresh();
+  };
+  const remove = async (id) => { await db.rpc("admin_delete_player", { input_player_id: id, input_pw: cred.pw }); await refresh(); };
   const updateName = async (id, newNameRaw, otherErrSetter) => {
     if (!validName(newNameRaw)) { otherErrSetter("נא להזין שם פרטי ושם משפחה"); return false; }
     const nn = normName(newNameRaw);
     if (roster.some(r=>r.id!==id && normName(r.name)===nn)) { otherErrSetter("השם הזה כבר שייך לשחקן אחר"); return false; }
-    await db.from("players").update({ name: newNameRaw.trim() }).eq("id",id);
+    await db.rpc("admin_update_player_name", { input_player_id: id, input_name: newNameRaw.trim(), input_pw: cred.pw });
     await refresh();
     return true;
   };
@@ -1188,18 +1172,19 @@ function AdminRoster({ roster, admins, refresh }) {
     if (!validPhone(newPhoneRaw)) { otherErrSetter("טלפון לא תקין"); return false; }
     const np = normPhone(newPhoneRaw);
     if (roster.some(r=>r.id!==id && r.phone===np)) { otherErrSetter("המספר הזה כבר שייך לשחקן אחר"); return false; }
-    await db.from("players").update({ phone: np }).eq("id",id);
+    const { data } = await db.rpc("admin_update_player_phone", { input_player_id: id, input_phone: np, input_pw: cred.pw });
+    if (data === "phone_taken") { otherErrSetter("המספר הזה כבר שייך לשחקן אחר"); return false; }
     await refresh();
     return true;
   };
   // עדכון מייל לשחקן קיים — למשל כששחקן מודיע שהוא עבר למייל חדש. בפעם הבאה
   // שהוא יאמת עם המייל החדש, המערכת תקשר אותו אוטומטית לרשומה הקיימת שלו
-  // (בלי ליצור בקשה חדשה ובלי לדרוש אישור נוסף) — ראו tryRelinkByEmail.
+  // (בלי ליצור בקשה חדשה ובלי לדרוש אישור נוסף) — ראו submit_player_request.
   const updateEmail = async (id, newEmailRaw, otherErrSetter) => {
     if (!validEmail(newEmailRaw)) { otherErrSetter("כתובת מייל לא תקינה"); return false; }
     const ne = newEmailRaw.trim();
     if (roster.some(r=>r.id!==id && sameEmail(r.email, ne))) { otherErrSetter("המייל הזה כבר שייך לשחקן אחר"); return false; }
-    await db.from("players").update({ email: ne }).eq("id",id);
+    await db.rpc("admin_update_player_email", { input_player_id: id, input_email: ne, input_pw: cred.pw });
     await refresh();
     return true;
   };

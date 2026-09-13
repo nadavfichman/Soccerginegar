@@ -108,6 +108,17 @@ function tierRank(reg, roster){
 }
 function sortRegs(regs, roster){ return [...regs].sort((a,b)=>{ const ra=tierRank(a,roster),rb=tierRank(b,roster); if(ra!==rb) return rb-ra; return a.ts-b.ts; }); }
 
+// קריאת RPC ניהולית עם חשיפת שגיאות — כדי שכישלון בשרת (למשל אישורים שפגו
+// אחרי מעבר בין מסך שחקן לניהול) לא ייבלע בשקט ויראה כאילו "כלום לא קרה".
+async function callAdmin(rpcName, args) {
+  const { data, error } = await db.rpc(rpcName, args);
+  if (error) {
+    console.error(rpcName, error);
+    window.alert("הפעולה נכשלה — ייתכן שההתחברות לניהול פגה. נסה לצאת ולהתחבר שוב.");
+  }
+  return data;
+}
+
 // ==== שכבת גישה לנתונים ====
 const api = {
   async loadAll() {
@@ -198,6 +209,9 @@ function App() {
   const [now, setNow] = useState(Date.now());
   const [view, setView] = useState("player");
   const [role, setRole] = useState(null);
+  // האישורים שאומתו בכניסה לניהול — ברמת App כדי לשרוד מעבר בין מסך שחקן/ניהול
+  // (AdminView נטענת מחדש בכל מעבר כזה, ואיתה כל ה-state המקומי שלה היה מתאפס).
+  const [cred, setCred] = useState(null);
 
   const [roster, setRoster] = useState([]);
   const [pending, setPending] = useState([]);
@@ -266,7 +280,7 @@ function App() {
         <PlayerView {...{ roster, pending, games: gamesWithRegs, session, identity, now, refresh, loadIdentity }} />
       ) : (
         <AdminView {...{ roster, pending, games: gamesWithRegs, now, role, setRole,
-          admins, myPhone, refresh, session }} />
+          admins, myPhone, refresh, session, cred, setCred }} />
       )}
       <footer style={S.footer}>כדורגל גניגרי ושות' · ניהול רישום ורשימות</footer>
     </div>
@@ -573,7 +587,7 @@ function PlayerRosterList({ main, wait, roster, meId }) {
 // ============================================================================
 // צד ניהול
 // ============================================================================
-function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone, refresh, session }) {
+function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone, refresh, session, cred, setCred }) {
   const [pw,setPw]=useState(""); const [pin,setPin]=useState("");
   const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
   const [hint,setHint]=useState(null); // 'super' | 'admin' | null — רמז בלבד, לא מעניק הרשאה
@@ -593,7 +607,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
       setErr(""); setBusy(true);
       const r = await api.checkLogin(pw, null, null);
       setBusy(false);
-      if (r === "super") { setRole(r); return; }
+      if (r === "super") { setCred({ pw }); setRole(r); return; }
       if (r === "locked") { setErr("יותר מדי ניסיונות שגויים. נסה שוב בעוד כמה דקות."); return; }
       setErr("סיסמה שגויה");
     };
@@ -601,7 +615,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
       setErr(""); setBusy(true);
       const r = await api.checkLogin(null, myPhone, pin);
       setBusy(false);
-      if (r === "admin") { setRole(r); return; }
+      if (r === "admin") { setCred({ phone: myPhone, pin }); setRole(r); return; }
       if (r === "locked") { setErr("יותר מדי ניסיונות שגויים. נסה שוב בעוד כמה דקות."); return; }
       setErr("קוד אישי שגוי");
     };
@@ -626,21 +640,18 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
           <button className="btn primary" style={{marginTop:10}} onClick={tryLoginPw} disabled={busy}>{busy?"בודק…":"כניסה"}</button>
           {err && <p style={S.errText}>{err}</p>}
         </section>
-        <RedeemInviteForm {...{ myPhone, setRole, refresh }} />
+        <RedeemInviteForm {...{ myPhone, setRole, setCred, refresh }} />
         <ResetPinForm {...{ myPhone, setRole }} />
       </main>
     );
   }
 
   const isSuper = role === "super";
-  // האישורים שנשמרו בזיכרון מרגע הכניסה — מצורפים בשקט לכל קריאת RPC ניהולית,
-  // כדי שהשרת יאמת אותם מחדש בכל פעולה (ולא רק יסתמך על מצב הכפתורים בדפדפן).
-  const cred = isSuper ? { pw } : { phone: myPhone, pin };
   return (
     <main style={S.main}>
       <section style={S.roleBar}>
         <span style={S.roleTag}>{isSuper?"אדמין־על":"מנהל"}</span>
-        <button className="btn small" onClick={()=>{setRole(null);setPw("");setPin("");}}>יציאה</button>
+        <button className="btn small" onClick={()=>{setRole(null);setCred(null);setPw("");setPin("");}}>יציאה</button>
       </section>
       {isSuper && (
         <>
@@ -705,7 +716,7 @@ function ResetPinForm({ myPhone, setRole }) {
   );
 }
 
-function RedeemInviteForm({ myPhone, setRole, refresh }) {
+function RedeemInviteForm({ myPhone, setRole, setCred, refresh }) {
   const [phone,setPhone]=useState(myPhone||""); const [code,setCode]=useState("");
   const [pin,setPin]=useState(""); const [pin2,setPin2]=useState("");
   const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
@@ -721,6 +732,7 @@ function RedeemInviteForm({ myPhone, setRole, refresh }) {
     setBusy(false);
     if (result === "ok") {
       await refresh();
+      setCred({ phone: normPhone(phone), pin: pin.trim() });
       setRole("admin");
       return;
     }
@@ -750,7 +762,7 @@ function RedeemInviteForm({ myPhone, setRole, refresh }) {
 }
 
 function SuperAdminPanel({ admins, roster, refresh, cred, session }) {
-  const removeAdmin = async (id) => { await db.rpc("remove_admin", { input_admin_id: id, input_pw: cred.pw }); await refresh(); };
+  const removeAdmin = async (id) => { await callAdmin("remove_admin", { input_admin_id: id, input_pw: cred.pw }); await refresh(); };
   return (
     <>
       <AdminInvites {...{ admins, roster, refresh }} />
@@ -1008,11 +1020,11 @@ function PendingRequests({ pending, roster, refresh, cred }) {
     await refresh();
   };
   const reject = async (req) => {
-    await db.rpc("reject_player_request", { input_request_id: req.id, input_pw: cred.pw });
+    await callAdmin("reject_player_request", { input_request_id: req.id, input_pw: cred.pw });
     await refresh();
   };
   const reconsider = async (req) => {
-    await db.rpc("reconsider_player_request", { input_request_id: req.id, input_pw: cred.pw });
+    await callAdmin("reconsider_player_request", { input_request_id: req.id, input_pw: cred.pw });
     await refresh();
   };
 
@@ -1056,7 +1068,7 @@ function PendingRequests({ pending, roster, refresh, cred }) {
 function AdminGames({ games, roster, now, refresh, cred }) {
   const [showNew,setShowNew]=useState(false);
   const addGame = async (g) => {
-    await db.rpc("admin_create_game", { input_kickoff: g.kickoff, input_opens_at: g.opensAt, input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
+    await callAdmin("admin_create_game", { input_kickoff: g.kickoff, input_opens_at: g.opensAt, input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
     setShowNew(false); await refresh();
   };
   return (
@@ -1096,21 +1108,21 @@ function AdminGameRow({ game, roster, now, refresh, cred }) {
   const credArgs = { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null };
 
   const setGameField = async (patch) => {
-    if ("published" in patch) await db.rpc("admin_set_game_published", { input_game_id: game.id, input_published: patch.published, ...credArgs });
-    if ("roster_published" in patch) await db.rpc("admin_set_roster_published", { input_game_id: game.id, input_roster_published: patch.roster_published, ...credArgs });
+    if ("published" in patch) await callAdmin("admin_set_game_published", { input_game_id: game.id, input_published: patch.published, ...credArgs });
+    if ("roster_published" in patch) await callAdmin("admin_set_roster_published", { input_game_id: game.id, input_roster_published: patch.roster_published, ...credArgs });
     await refresh();
   };
-  const removeReg = async (pid) => { await db.rpc("admin_remove_registration", { input_game_id: game.id, input_player_id: pid, ...credArgs }); await refresh(); };
+  const removeReg = async (pid) => { await callAdmin("admin_remove_registration", { input_game_id: game.id, input_player_id: pid, ...credArgs }); await refresh(); };
   const addReg = async () => {
     if (!addId || game.registrations.some(r=>r.playerId===addId)) return;
-    await db.rpc("admin_add_registration", { input_game_id: game.id, input_player_id: addId, ...credArgs });
+    await callAdmin("admin_add_registration", { input_game_id: game.id, input_player_id: addId, ...credArgs });
     setAddId(""); await refresh();
   };
-  const deleteGame = async () => { await db.rpc("admin_delete_game", { input_game_id: game.id, ...credArgs }); await refresh(); };
+  const deleteGame = async () => { await callAdmin("admin_delete_game", { input_game_id: game.id, ...credArgs }); await refresh(); };
   const bump = async (pid, dir) => {
     const idx = sorted.findIndex(r=>r.player_id===pid);
     const swapWith = sorted[idx+dir]; if(!swapWith) return;
-    await db.rpc("admin_set_registration_ts", { input_game_id: game.id, input_player_id: pid, input_ts: swapWith.ts - dir, ...credArgs });
+    await callAdmin("admin_set_registration_ts", { input_game_id: game.id, input_player_id: pid, input_ts: swapWith.ts - dir, ...credArgs });
     await refresh();
   };
   const buildWa = () => {
@@ -1184,25 +1196,25 @@ function AdminRoster({ roster, admins, refresh, cred }) {
     if (roster.some(r=>r.phone===p)) { setErr("מספר קיים כבר ברשימה"); return; }
     const nn = normName(name);
     if (roster.some(r=>normName(r.name)===nn)) { setErr("שם זה כבר קיים ברשימה"); return; }
-    const { data } = await db.rpc("admin_add_player", { input_name: name.trim(), input_phone: p, input_is_ganigari: newGanigari, input_is_vatik: newVatik, input_pw: cred.pw });
+    const data = await callAdmin("admin_add_player", { input_name: name.trim(), input_phone: p, input_is_ganigari: newGanigari, input_is_vatik: newVatik, input_pw: cred.pw });
     if (data === "phone_taken") { setErr("מספר קיים כבר ברשימה"); return; }
     setName(""); setPhone(""); setNewGanigari(false); setNewVatik(false); await refresh();
   };
   const toggleFlag = async (id, field, val) => {
     const rpc = field === "is_ganigari" ? "admin_set_player_ganigari" : "admin_set_player_vatik";
-    await db.rpc(rpc, { input_player_id: id, input_value: val, input_pw: cred.pw });
+    await callAdmin(rpc, { input_player_id: id, input_value: val, input_pw: cred.pw });
     await refresh();
   };
   const remove = async (id, name) => {
     if (!window.confirm("להסיר את " + name + " מרשימת השחקנים? הפעולה תמחק גם את כל ההרשמות שלו למשחקים, ולא ניתנת לביטול.")) return;
-    await db.rpc("admin_delete_player", { input_player_id: id, input_pw: cred.pw });
+    await callAdmin("admin_delete_player", { input_player_id: id, input_pw: cred.pw });
     await refresh();
   };
   const updateName = async (id, newNameRaw, otherErrSetter) => {
     if (!validName(newNameRaw)) { otherErrSetter("נא להזין שם פרטי ושם משפחה"); return false; }
     const nn = normName(newNameRaw);
     if (roster.some(r=>r.id!==id && normName(r.name)===nn)) { otherErrSetter("השם הזה כבר שייך לשחקן אחר"); return false; }
-    await db.rpc("admin_update_player_name", { input_player_id: id, input_name: newNameRaw.trim(), input_pw: cred.pw });
+    await callAdmin("admin_update_player_name", { input_player_id: id, input_name: newNameRaw.trim(), input_pw: cred.pw });
     await refresh();
     return true;
   };
@@ -1210,7 +1222,7 @@ function AdminRoster({ roster, admins, refresh, cred }) {
     if (!validPhone(newPhoneRaw)) { otherErrSetter("טלפון לא תקין"); return false; }
     const np = normPhone(newPhoneRaw);
     if (roster.some(r=>r.id!==id && r.phone===np)) { otherErrSetter("המספר הזה כבר שייך לשחקן אחר"); return false; }
-    const { data } = await db.rpc("admin_update_player_phone", { input_player_id: id, input_phone: np, input_pw: cred.pw });
+    const data = await callAdmin("admin_update_player_phone", { input_player_id: id, input_phone: np, input_pw: cred.pw });
     if (data === "phone_taken") { otherErrSetter("המספר הזה כבר שייך לשחקן אחר"); return false; }
     await refresh();
     return true;
@@ -1222,7 +1234,7 @@ function AdminRoster({ roster, admins, refresh, cred }) {
     if (!validEmail(newEmailRaw)) { otherErrSetter("כתובת מייל לא תקינה"); return false; }
     const ne = newEmailRaw.trim();
     if (roster.some(r=>r.id!==id && sameEmail(r.email, ne))) { otherErrSetter("המייל הזה כבר שייך לשחקן אחר"); return false; }
-    await db.rpc("admin_update_player_email", { input_player_id: id, input_email: ne, input_pw: cred.pw });
+    await callAdmin("admin_update_player_email", { input_player_id: id, input_email: ne, input_pw: cred.pw });
     await refresh();
     return true;
   };

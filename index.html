@@ -141,9 +141,9 @@ const api = {
     if (error) { console.error(error); return null; }
     return data; // 'super' | 'admin' | null
   },
-  // עדכון הגדרות — דורש את סיסמת האדמין-על הנוכחית לאימות
+  // עדכון הגדרות — דורש גם את סיסמת האדמין-על הנוכחית וגם אימות מייל אמיתי (ר' update_settings_secure)
   async updateSettings(currentSuperPw, newSuperPw, newSuperPhone) {
-    const { data, error } = await db.rpc("update_settings", {
+    const { data, error } = await db.rpc("update_settings_secure", {
       current_super_pw: currentSuperPw, new_super_pw: newSuperPw, new_super_phone: newSuperPhone || null,
     });
     if (error) { console.error(error); return false; }
@@ -265,7 +265,7 @@ function App() {
         <PlayerView {...{ roster, pending, games: gamesWithRegs, session, identity, now, refresh, loadIdentity }} />
       ) : (
         <AdminView {...{ roster, pending, games: gamesWithRegs, now, role, setRole,
-          admins, myPhone, refresh }} />
+          admins, myPhone, refresh, session }} />
       )}
       <footer style={S.footer}>כדורגל גניגרי ושות' · ניהול רישום ורשימות</footer>
     </div>
@@ -572,7 +572,7 @@ function PlayerRosterList({ main, wait, roster, meId }) {
 // ============================================================================
 // צד ניהול
 // ============================================================================
-function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone, refresh }) {
+function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone, refresh, session }) {
   const [pw,setPw]=useState(""); const [pin,setPin]=useState("");
   const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
   const [hint,setHint]=useState(null); // 'super' | 'admin' | null — רמז בלבד, לא מעניק הרשאה
@@ -643,7 +643,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
       </section>
       {isSuper && (
         <>
-          <SuperAdminPanel {...{ admins, roster, refresh, cred }} />
+          <SuperAdminPanel {...{ admins, roster, refresh, cred, session }} />
           <PendingRequests {...{ pending, roster, refresh, cred }} />
         </>
       )}
@@ -748,7 +748,7 @@ function RedeemInviteForm({ myPhone, setRole, refresh }) {
   );
 }
 
-function SuperAdminPanel({ admins, roster, refresh, cred }) {
+function SuperAdminPanel({ admins, roster, refresh, cred, session }) {
   const removeAdmin = async (id) => { await db.rpc("remove_admin", { input_admin_id: id, input_pw: cred.pw }); await refresh(); };
   return (
     <>
@@ -764,7 +764,7 @@ function SuperAdminPanel({ admins, roster, refresh, cred }) {
           </div>
         ))}
       </section>
-      <SuperSettings refresh={refresh} />
+      <SuperSettings refresh={refresh} session={session} />
     </>
   );
 }
@@ -924,38 +924,71 @@ function AdminInvites({ admins, roster, refresh }) {
 
 // הסיסמאות הנוכחיות אינן ניתנות לקריאה מהדפדפן — הטופס תמיד ריק, וכל שמירה
 // דורשת את סיסמת האדמין-על הנוכחית לאימות (מאומת בתוך בסיס הנתונים בלבד).
-function SuperSettings({ refresh }) {
+const SUPER_SETTINGS_EMAIL = "nadavfichman@gmail.com";
+
+// שינוי סיסמת אדמין-על נעול מאחורי אימות מייל אמיתי (לא רק סיסמה נוכחית) —
+// כדי שגם אם מישהו יודע את הסיסמה הנוכחית, הוא לא יוכל לשנות אותה בלי גישה
+// בפועל לתיבת המייל של nadavfichman@gmail.com. משתמש באותו מנגנון קישור-במייל
+// שכבר קיים לשחקנים (db.auth.signInWithOtp) — אין צורך בשירות מייל נוסף.
+function SuperSettings({ refresh, session }) {
   const [currentSuperPw,setCurrentSuperPw]=useState("");
   const [superPw,setSuperPw]=useState("");
   const [superPhone,setSuperPhone]=useState("");
   const [msg,setMsg]=useState(""); const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
+  const [sentEmail,setSentEmail]=useState(false); const [emailBusy,setEmailBusy]=useState(false);
+
+  const emailVerified = session && normEmail(session.user.email) === SUPER_SETTINGS_EMAIL;
+
+  const sendVerification = async () => {
+    setEmailBusy(true); setErr("");
+    const { error } = await db.auth.signInWithOtp({ email: SUPER_SETTINGS_EMAIL, options: { emailRedirectTo: window.location.href } });
+    setEmailBusy(false);
+    if (error) { setErr("שגיאה בשליחת מייל האימות — נסה שוב"); return; }
+    setSentEmail(true);
+  };
+
   const save = async () => {
     setErr(""); setMsg("");
+    if (!emailVerified) { setErr("יש לאמת קודם את המייל"); return; }
     if (!currentSuperPw.trim()) { setErr("נא להזין את סיסמת האדמין-על הנוכחית לאימות"); return; }
     if (!superPw.trim()) { setErr("הסיסמה החדשה לא יכולה להיות ריקה"); return; }
     if (superPhone && !validPhone(superPhone)) { setErr("טלפון אדמין לא תקין"); return; }
     setBusy(true);
     const ok = await api.updateSettings(currentSuperPw.trim(), superPw.trim(), superPhone?normPhone(superPhone):null);
     setBusy(false);
-    if (!ok) { setErr("סיסמת האדמין-על הנוכחית שגויה — לא נשמר"); return; }
+    if (!ok) { setErr("סיסמת האדמין-על הנוכחית שגויה, או שהאימות במייל פג — לא נשמר"); return; }
     setMsg("נשמר"); setCurrentSuperPw(""); setTimeout(()=>setMsg(""),2500); await refresh();
   };
+
   return (
     <section style={S.card}>
       <h2 style={S.h2}>הגדרות אדמין-על</h2>
       <p style={S.hint}>רק אתה רואה את המסך הזה. אין יותר סיסמה למנהלים — הם נכנסים רק לפי טלפון מזוהה. הסיסמה כאן היא שלך בלבד.</p>
 
-      <label style={S.labelSm}>אימות: סיסמת האדמין-על הנוכחית</label>
-      <input style={S.input} type="password" value={currentSuperPw} onChange={e=>setCurrentSuperPw(e.target.value)} placeholder="נדרש לאישור כל שינוי" />
+      {!emailVerified ? (
+        <div style={{...S.formBox, marginTop:12}}>
+          <p style={S.hint}>לפני שינוי הסיסמה — יש לאמת שאתה בעל תיבת המייל {SUPER_SETTINGS_EMAIL}.</p>
+          {!sentEmail ? (
+            <button className="btn primary" style={{marginTop:6}} onClick={sendVerification} disabled={emailBusy}>{emailBusy?"שולח…":"שלח לי קישור אימות"}</button>
+          ) : (
+            <p style={{...S.hint,fontWeight:700}}>נשלח קישור ל-{SUPER_SETTINGS_EMAIL}. פתח את המייל ולחץ על הקישור, ואז חזור לכאן — הטופס ייפתח אוטומטית.</p>
+          )}
+        </div>
+      ) : (
+        <>
+          <label style={S.labelSm}>אימות: סיסמת האדמין-על הנוכחית</label>
+          <input style={S.input} type="password" value={currentSuperPw} onChange={e=>setCurrentSuperPw(e.target.value)} placeholder="נדרש לאישור כל שינוי" />
 
-      <label style={{...S.labelSm,marginTop:14}}>סיסמת אדמין-על חדשה (רק לך)</label>
-      <input style={S.input} value={superPw} onChange={e=>setSuperPw(e.target.value)} placeholder="הזן ערך חדש" />
-      <label style={{...S.labelSm,marginTop:10}}>מספר הטלפון שלך (זיהוי אדמין-על)</label>
-      <input style={S.input} value={superPhone} inputMode="tel" placeholder="0501234567" onChange={e=>setSuperPhone(e.target.value)} />
-      <p style={{...S.hint,fontSize:12}}>תיכנס כאדמין-על אוטומטית מהמכשיר הזה, או בכל מכשיר עם סיסמת האדמין-על. אם תחליף מספר — עדכן כאן.</p>
+          <label style={{...S.labelSm,marginTop:14}}>סיסמת אדמין-על חדשה (רק לך)</label>
+          <input style={S.input} value={superPw} onChange={e=>setSuperPw(e.target.value)} placeholder="הזן ערך חדש" />
+          <label style={{...S.labelSm,marginTop:10}}>מספר הטלפון שלך (זיהוי אדמין-על)</label>
+          <input style={S.input} value={superPhone} inputMode="tel" placeholder="0501234567" onChange={e=>setSuperPhone(e.target.value)} />
+          <p style={{...S.hint,fontSize:12}}>תיכנס כאדמין-על אוטומטית מהמכשיר הזה, או בכל מכשיר עם סיסמת האדמין-על. אם תחליף מספר — עדכן כאן.</p>
+          <button className="btn primary" style={{marginTop:10}} onClick={save} disabled={busy}>{busy?"שומר…":"שמור הגדרות"}</button>
+        </>
+      )}
       {err && <p style={S.errText}>{err}</p>}
       {msg && <p style={{...S.hint,color:"#166534",fontWeight:700}}>{msg}</p>}
-      <button className="btn primary" style={{marginTop:10}} onClick={save} disabled={busy}>{busy?"שומר…":"שמור הגדרות"}</button>
     </section>
   );
 }

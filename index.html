@@ -216,7 +216,8 @@ function App() {
     const { data: { session: s } } = await db.auth.getSession();
     setSession(s);
     if (s) {
-      const { data } = await db.rpc("get_my_identity");
+      const { data, error } = await db.rpc("get_my_identity");
+      if (error) console.error("get_my_identity failed:", error);
       setIdentity(data && data[0] ? data[0] : null);
     } else {
       setIdentity(null);

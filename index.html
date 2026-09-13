@@ -1324,11 +1324,20 @@ function AdminRoster({ roster, admins, refresh, cred }) {
     XLSX.writeFile(wb, "שחקנים מאושרים.xlsx");
   };
 
+  const shareRosterWa = () => {
+    const lines = ["⚽ כדורגל גניגרי ושות'", "רשימת שחקנים מאושרים ("+sorted.length+"):", ""];
+    sorted.forEach((p,i) => lines.push((i+1)+". "+p.name));
+    window.open("https://wa.me/?text="+encodeURIComponent(lines.join("\n")), "_blank");
+  };
+
   return (
     <section style={S.card}>
       <div style={S.rowBetween}>
         <h2 style={S.h2}>שחקנים מאושרים ({roster.length})</h2>
-        <button className="btn small" onClick={exportExcel}>📥 ייצוא לאקסל</button>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          <button className="btn small" onClick={exportExcel}>📥 ייצוא לאקסל</button>
+          <button className="btn small" onClick={shareRosterWa}>💬 שלח לוואטסאפ</button>
+        </div>
       </div>
       <p style={S.hint}>עדיפות: גניגרי+ותיק (גבוהה ביותר) ← גניגרי ← ותיק ← רגיל. שחקן יכול להיות גם גניגרי וגם ותיק בו-זמנית.</p>
 

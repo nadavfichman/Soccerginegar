@@ -3,7 +3,9 @@
   "private": true,
   "description": "Dev-only tooling for CI smoke tests. Does not affect the deployed app (index.html has no build step).",
   "scripts": {
-    "test": "playwright test"
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test tests/logic.spec.js",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.47.0"

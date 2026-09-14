@@ -17,6 +17,9 @@ jobs:
 
       - run: npm install
 
+      - name: Run unit tests (fast, no browser needed)
+        run: npm run test:unit
+
       - run: npx playwright install --with-deps chromium
 
       - name: Serve the site locally
@@ -24,8 +27,8 @@ jobs:
           python3 -m http.server 8080 &
           sleep 1
 
-      - name: Run smoke tests
-        run: npm test
+      - name: Run e2e smoke tests
+        run: npm run test:e2e
         env:
           SITE_URL: http://localhost:8080/
 

@@ -8,6 +8,8 @@
 - **`policies.sql`** — מדיניות ה-RLS הנוכחית (SELECT בלבד לכל הטבלאות הציבוריות; כל כתיבה עוברת דרך RPC).
 - **`schema_additions.sql`** — עמודות שנוספו לטבלאות קיימות (`attended`, `attendance_locked`).
 - **`migrations/`** — היסטוריה כרונולוגית: קובץ אחד לכל שינוי SQL, לפי סדר שקרה בפועל (תואם ל-git log). ר' "מוסכמה קדימה" למטה.
+- **`export_full_schema.sql`** — שאילתת קריאה-בלבד שמייצרת מחדש את ה-`CREATE TABLE`/`INDEX`/`EXTENSION` המקוריים (ר' "גיבוי סכימה מלאה" למטה).
+- **`schema_snapshot_*.sql`** — תוצר ההרצה של `export_full_schema.sql` בפועל, נשמר כקובץ (אם/כאשר הורץ). ר' למטה.
 
 ## מוסכמה קדימה — איך מוסיפים שינוי SQL חדש
 
@@ -18,11 +20,13 @@
 
 כן, זו כפילות קטנה (כותבים את השינוי פעמיים) — אבל היא זולה, ובתמורה מקבלים גם "מה יש היום" במבט אחד וגם "מה קרה ומתי" בלי לחפש בהיסטוריית שיחה.
 
-## מגבלה חשובה
+## גיבוי סכימה מלאה
 
-**לא נאספה כאן הגדרת הטבלאות המקורית** (`CREATE TABLE` עם הטיפוסים/האילוצים/ברירות המחדל של `players`, `games`, `registrations`, `player_requests`, `admins`, `admin_requests`, `settings`, `login_attempts`, `admin_invites`, `admin_pin_resets`) — כי היא נוצרה לפני תחילת העבודה הזו ומעולם לא הועברה. הקבצים כאן מתעדים רק את מה שהשתנה/נוסף.
+הגדרת הטבלאות המקורית (`CREATE TABLE` עם הטיפוסים/האילוצים/ברירות המחדל של `players`, `games`, `registrations`, `player_requests`, `admins`, `admin_requests`, `settings`, `login_attempts`, `admin_invites`, `admin_pin_resets`) נוצרה לפני תחילת העבודה על הפרויקט הזה ומעולם לא הועברה — `functions.sql`/`policies.sql`/`schema_additions.sql` מתעדים רק את מה שהשתנה/נוסף מאז, לא את הבסיס.
 
-**מומלץ:** לייצא את הסכימה המלאה ישירות מ-Supabase (Database → Backups, או `select table_name, column_name, data_type, column_default from information_schema.columns where table_schema='public' order by table_name;` ב-SQL Editor) ולהוסיף כקובץ נפרד, כדי שיהיה תיעוד מלא של המסד כולו — לא רק של מה שהשתנה כאן.
+**`export_full_schema.sql`** סוגר את הפער: שאילתת קריאה-בלבד שמריצים ב-SQL Editor של Supabase, שמייצרת מחדש את כל ה-`CREATE TABLE`/`INDEX`/`EXTENSION` ישירות מפנקסי המערכת של Postgres עצמו (לא מנחשת — קוראת את המבנה האמיתי). התוצאה (עמודת `stmt`, מלמעלה למטה) היא קובץ SQL אחד שממנו אפשר לשחזר את כל המסד מאפס, יחד עם `functions.sql`+`policies.sql`+`schema_additions.sql`.
+
+**חשוב:** זו שאילתה בלבד — היא לא שומרת כלום אוטומטית. כדי שהתוצאה תהפוך לגיבוי אמיתי צריך להריץ אותה בפועל ב-Supabase ולהעביר את הפלט הלאה (לשמירה בגיט כ-`schema_snapshot_<תאריך>.sql`, לדוגמה). מומלץ לחזור על זה אחרי כל שינוי סכימה משמעותי, לא פעם אחת בלבד.
 
 ## איך להריץ
 

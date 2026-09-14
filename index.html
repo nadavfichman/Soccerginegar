@@ -372,9 +372,9 @@ function InstallButton() {
           <div style={S.iosHelpBox} onClick={e=>e.stopPropagation()}>
             <h3 style={S.centerTitle}>הוספה למסך הבית</h3>
             {isIOS ? (
-              <p style={S.centerText}>לחץ על כפתור השיתוף <b>⬆️</b> בסרגל הדפדפן של Safari, ואז בחר <b>"הוסף למסך הבית"</b>.</p>
+              <p style={S.centerText}>ב-Safari: לחץ על כפתור השיתוף <b>⬆️</b> בסרגל הדפדפן, ואז בחר <b>"הוסף למסך הבית"</b>.<br/>ב-Chrome: לחץ על שלוש הנקודות <b>⋮</b>, ובחר <b>"התקנה ויצירת קיצור דרך"</b>.</p>
             ) : (
-              <p style={S.centerText}>לחץ על שלוש הנקודות <b>⋮</b> בפינת הדפדפן, ואז בחר <b>"הוסף למסך הבית"</b>.</p>
+              <p style={S.centerText}>לחץ על שלוש הנקודות <b>⋮</b> בפינת הדפדפן, ובחר באפשרות להוספה למסך הבית — לפעמים נקראת <b>"הוסף למסך הבית"</b>, ולפעמים <b>"התקנה ויצירת קיצור דרך"</b> (תלוי בגרסת הדפדפן).</p>
             )}
             <button className="btn primary" style={{width:"100%"}} onClick={()=>setShowHelp(false)}>הבנתי</button>
           </div>

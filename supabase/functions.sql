@@ -384,6 +384,23 @@ end; $$;
 
 grant execute on function log_client_error(text,text,text,text,text) to anon, authenticated;
 
+-- קריאת יומן השגיאות (אדמין-על בלבד) — client_errors חסומה לגמרי ל-SELECT
+-- ישיר (ר' policies.sql), כך שזו הדרך היחידה לצפות בה, כולל מתוך האפליקציה
+-- עצמה (ר' ClientErrorLog ב-index.html) ולא רק דרך שאילתה ב-Dashboard.
+create or replace function get_client_errors(input_pw text, input_limit int default 200)
+returns table(id bigint, created_at timestamptz, message text, stack text, user_agent text, url text, context text)
+language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, null, null);
+  if v_role <> 'super' then raise exception 'not_authorized'; end if;
+  return query
+    select e.id, e.created_at, e.message, e.stack, e.user_agent, e.url, e.context
+    from client_errors e
+    order by e.created_at desc
+    limit greatest(coalesce(input_limit, 200), 1);
+end; $$;
+
 
 -- ============================================================================
 -- חלק ב: פונקציות קיימות מראש (נכתבו לפני הפרויקט הזה) — כאן כהפניה בלבד

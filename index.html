@@ -829,7 +829,55 @@ function SuperAdminPanel({ admins, roster, refresh, cred, session }) {
         ))}
       </section>
       <SuperSettings refresh={refresh} session={session} />
+      <ClientErrorLog cred={cred} />
     </>
+  );
+}
+
+// יומן שגיאות: נטען רק בלחיצה (לא בטעינת הדף), כי הוא לא נחוץ ברוב הביקורים
+// באדמין-על — ומכיוון ש-client_errors חסומה ל-SELECT ישיר, זו הדרך היחידה
+// לצפות בו מלבד שאילתה ידנית ב-Supabase Dashboard (ר' get_client_errors).
+function ClientErrorLog({ cred }) {
+  const [open,setOpen] = useState(false);
+  const [errors,setErrors] = useState(null); // null = עוד לא נטען
+  const [busy,setBusy] = useState(false);
+
+  const load = async () => {
+    setBusy(true);
+    const data = await callAdmin("get_client_errors", { input_pw: cred.pw, input_limit: 200 });
+    setBusy(false);
+    setErrors(data || []);
+  };
+
+  const toggle = async () => {
+    if (!open && errors === null) await load();
+    setOpen(o => !o);
+  };
+
+  return (
+    <section style={S.card}>
+      <div style={S.rowBetween}>
+        <h2 style={S.h2}>📋 יומן שגיאות</h2>
+        <button className="btn small" onClick={toggle}>{open ? "סגור" : "פתח יומן"}</button>
+      </div>
+      <p style={S.hint}>שגיאות לא צפויות שקרו אצל משתמשים (קריסת מסך, כישלון פעולת ניהול) — נרשמות אוטומטית, בלי שהמשתמש צריך לדווח.</p>
+      {open && (
+        <div style={{marginTop:10}}>
+          <button className="btn small" onClick={load} disabled={busy} style={{marginBottom:8}}>{busy?"טוען…":"רענן"}</button>
+          {!busy && errors && errors.length===0 && <p style={S.hint}>אין שגיאות רשומות 🎉</p>}
+          {!busy && (errors||[]).map(e=>(
+            <div key={e.id} style={S.errorRow}>
+              <div style={S.rowBetween}>
+                <b style={{fontSize:13}}>{e.context || "—"}</b>
+                <span style={S.subLine}>{fmt(e.created_at)}</span>
+              </div>
+              <div style={{fontSize:13,marginTop:2}}>{e.message}</div>
+              {e.url && <div style={{...S.subLine,wordBreak:"break-all"}}>{e.url}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1619,6 +1667,7 @@ const S = {
   pendRow: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, padding:"10px 0", borderBottom:"1px solid #eef2ee", flexWrap:"wrap" },
   pendActions: { display:"flex", gap:6, flexWrap:"wrap" },
   errorBox: { maxWidth:360, margin:"60px auto", padding:24, background:"#fff", border:"1px solid #e2e8e2", borderRadius:14, textAlign:"center" },
+  errorRow: { padding:"8px 10px", borderRadius:8, background:"#fef2f2", border:"1px solid #fecaca", marginBottom:6 },
 };
 
 ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App /></ErrorBoundary>);

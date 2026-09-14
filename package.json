@@ -1,0 +1,11 @@
+{
+  "name": "soccerginegar-tests",
+  "private": true,
+  "description": "Dev-only tooling for CI smoke tests. Does not affect the deployed app (index.html has no build step).",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0"
+  }
+}

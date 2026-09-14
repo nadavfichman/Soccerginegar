@@ -320,6 +320,22 @@ begin
   return 'ok';
 end; $$;
 
+-- רישום שגיאת קליינט (Error Boundary של React, window.onerror, כישלון RPC
+-- ב-callAdmin) לצורך ניטור — בלי לחכות שמישהו ידווח ידנית. write-only בכוונה:
+-- אין מדיניות SELECT על client_errors (ר' policies.sql), רק אדמין שמריץ
+-- שאילתה ישירה ב-Supabase Dashboard יכול לקרוא. כל אחד יכול לקרוא לפונקציה
+-- הזו בלי אימות — הסיכון היחיד הוא ספאם של רשומות לוג חסרות ערך, לא דליפת
+-- מידע או כתיבה לטבלאות אמיתיות.
+create or replace function log_client_error(
+  p_message text, p_stack text, p_user_agent text, p_url text, p_context text
+) returns void language plpgsql security definer as $$
+begin
+  insert into client_errors (message, stack, user_agent, url, context)
+    values (left(p_message,2000), left(p_stack,4000), left(p_user_agent,500), left(p_url,500), left(p_context,200));
+end; $$;
+
+grant execute on function log_client_error(text,text,text,text,text) to anon, authenticated;
+
 
 -- ============================================================================
 -- חלק ב: פונקציות קיימות מראש (נכתבו לפני הפרויקט הזה) — כאן כהפניה בלבד

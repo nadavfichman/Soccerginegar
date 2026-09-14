@@ -69,15 +69,56 @@ const {
   findDuplicate, tierRank, sortRegs,
 } = AppLogic;
 
+// שולח רשומת שגיאה ל-Supabase (best effort — לא זורק, לא חוסם את המשתמש) כדי
+// שנדע שקרתה תקלה בלי לחכות שמישהו ידווח עליה ידנית. ר' log_client_error ב-
+// supabase/functions.sql.
+function logClientError(message, stack, context) {
+  try {
+    db.rpc("log_client_error", {
+      p_message: String(message || "").slice(0, 2000),
+      p_stack: String(stack || "").slice(0, 4000),
+      p_user_agent: (navigator.userAgent || "").slice(0, 500),
+      p_url: (window.location.href || "").slice(0, 500),
+      p_context: String(context || "").slice(0, 200),
+    }).then(({ error }) => { if (error) console.error("logClientError failed", error); });
+  } catch (e) { console.error("logClientError threw", e); }
+}
+window.addEventListener("error", (e) => logClientError(e.message, e.error && e.error.stack, "window.onerror"));
+window.addEventListener("unhandledrejection", (e) => logClientError(e.reason && e.reason.message || String(e.reason), e.reason && e.reason.stack, "unhandledrejection"));
+
 // קריאת RPC ניהולית עם חשיפת שגיאות — כדי שכישלון בשרת (למשל אישורים שפגו
 // אחרי מעבר בין מסך שחקן לניהול) לא ייבלע בשקט ויראה כאילו "כלום לא קרה".
 async function callAdmin(rpcName, args) {
   const { data, error } = await db.rpc(rpcName, args);
   if (error) {
     console.error(rpcName, error);
+    logClientError(error.message, error.details, "callAdmin:" + rpcName);
     window.alert("הפעולה נכשלה — ייתכן שההתחברות לניהול פגה. נסה לצאת ולהתחבר שוב.");
   }
   return data;
+}
+
+// עוטף את כל האפליקציה כדי שקריסת רינדור (שגיאה לא צפויה בקומפוננטה) תציג
+// הודעה ידידותית במקום מסך לבן ריק, ותשלח רשומה ל-log_client_error כדי
+// שנדע שזה קרה בלי לחכות שהמשתמש ידווח.
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error, info) {
+    logClientError(error && error.message, error && error.stack, "ErrorBoundary:" + ((info && info.componentStack) || "").slice(0, 150));
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={S.errorBox}>
+          <h2 style={S.centerTitle}>משהו השתבש</h2>
+          <p style={S.centerText}>אירעה תקלה לא צפויה. נסה לרענן את הדף.</p>
+          <button className="btn primary" onClick={() => window.location.reload()}>רענן</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 // ==== שכבת גישה לנתונים ====
@@ -1577,9 +1618,10 @@ const S = {
   pubText: { fontSize:13, fontWeight:600, color:"#3f3f2e" },
   pendRow: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, padding:"10px 0", borderBottom:"1px solid #eef2ee", flexWrap:"wrap" },
   pendActions: { display:"flex", gap:6, flexWrap:"wrap" },
+  errorBox: { maxWidth:360, margin:"60px auto", padding:24, background:"#fff", border:"1px solid #e2e8e2", borderRadius:14, textAlign:"center" },
 };
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App /></ErrorBoundary>);
 </script>
 <script>
   // רישום Service Worker בלבד — האפליקציה מכוונת בכוונה ל"הוספה למסך הבית" כקיצור

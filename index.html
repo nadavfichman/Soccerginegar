@@ -345,47 +345,38 @@ function Header({ view, setView }) {
   );
 }
 
-// כפתור "התקן אפליקציה" — באנדרואיד/כרום מפעיל את דיאלוג ההתקנה המובנה של הדפדפן.
-// ב-iOS/Safari אין API כזה בכלל, אז מציג הנחיה ידנית (שיתוף ← הוסף למסך הבית).
-// לא מוצג כלל אם האפליקציה כבר מותקנת (display-mode: standalone).
+// כפתור "הוסף למסך הבית" — מציג הנחיה ידנית לפי מערכת ההפעלה (תפריט דפדפן).
+// בכוונה לא משתמש בדיאלוג ההתקנה האוטומטי (beforeinstallprompt) — manifest.json
+// מוגדר עם display:"browser" בדיוק כדי שזה יישאר קיצור-דרך פשוט (סימניה עם
+// אייקון) ולא "התקנת אפליקציה" מלאה, כי ההתקנה המלאה (WebAPK) עוברת בדיקת
+// Google Play Protect שתוקעת חלק ממשתמשי אנדרואיד. סימניה פשוטה עוקפת את זה
+// לגמרי, במחיר פס כתובת דק שנשאר גלוי כשפותחים מהמסך הבית.
 function InstallButton() {
-  const [installable, setInstallable] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
-  const [showIOSHelp, setShowIOSHelp] = useState(false);
   const [standalone, setStandalone] = useState(true);
+  const [isIOS, setIsIOS] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
     setStandalone(isStandalone);
-    if (isStandalone) return;
     setIsIOS(/iPad|iPhone|iPod/.test(navigator.userAgent || "") && !window.MSStream);
-    if (window.__installPrompt) setInstallable(true);
-    const onInstallable = () => setInstallable(true);
-    const onInstalled = () => { setInstallable(false); setStandalone(true); };
-    window.addEventListener("pwa-installable", onInstallable);
-    window.addEventListener("pwa-installed", onInstalled);
-    return () => { window.removeEventListener("pwa-installable", onInstallable); window.removeEventListener("pwa-installed", onInstalled); };
   }, []);
 
-  const install = async () => {
-    if (!window.__installPrompt) return;
-    window.__installPrompt.prompt();
-    try { await window.__installPrompt.userChoice; } catch {}
-    window.__installPrompt = null;
-    setInstallable(false);
-  };
-
-  if (standalone || (!installable && !isIOS)) return null;
+  if (standalone) return null;
 
   return (
     <>
-      <button style={S.installBtn} onClick={installable ? install : ()=>setShowIOSHelp(true)}>📲 התקן</button>
-      {showIOSHelp && (
-        <div style={S.iosHelpOverlay} onClick={()=>setShowIOSHelp(false)}>
+      <button style={S.installBtn} onClick={()=>setShowHelp(true)}>📲 הוסף למסך הבית</button>
+      {showHelp && (
+        <div style={S.iosHelpOverlay} onClick={()=>setShowHelp(false)}>
           <div style={S.iosHelpBox} onClick={e=>e.stopPropagation()}>
-            <h3 style={S.centerTitle}>התקנה על מסך הבית</h3>
-            <p style={S.centerText}>לחץ על כפתור השיתוף <b>⬆️</b> בסרגל הדפדפן של Safari, ואז בחר <b>"הוסף למסך הבית"</b>.</p>
-            <button className="btn primary" style={{width:"100%"}} onClick={()=>setShowIOSHelp(false)}>הבנתי</button>
+            <h3 style={S.centerTitle}>הוספה למסך הבית</h3>
+            {isIOS ? (
+              <p style={S.centerText}>לחץ על כפתור השיתוף <b>⬆️</b> בסרגל הדפדפן של Safari, ואז בחר <b>"הוסף למסך הבית"</b>.</p>
+            ) : (
+              <p style={S.centerText}>לחץ על שלוש הנקודות <b>⋮</b> בפינת הדפדפן, ואז בחר <b>"הוסף למסך הבית"</b>.</p>
+            )}
+            <button className="btn primary" style={{width:"100%"}} onClick={()=>setShowHelp(false)}>הבנתי</button>
           </div>
         </div>
       )}
@@ -1650,19 +1641,9 @@ const S = {
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 </script>
 <script>
-  // רישום Service Worker ולכידת אירוע ההתקנה — נדרשים כדי שהדפדפן (בעיקר אנדרואיד/כרום)
-  // יאפשר "הוספה למסך הבית" עם אייקון קבוע כמו אפליקציה. ב-iOS/Safari אין API כזה בכלל —
-  // שם הכפתור בתוך האפליקציה מציג הנחיה ידנית במקום.
-  window.__installPrompt = null;
-  window.addEventListener("beforeinstallprompt", (e) => {
-    e.preventDefault();
-    window.__installPrompt = e;
-    window.dispatchEvent(new Event("pwa-installable"));
-  });
-  window.addEventListener("appinstalled", () => {
-    window.__installPrompt = null;
-    window.dispatchEvent(new Event("pwa-installed"));
-  });
+  // רישום Service Worker בלבד — האפליקציה מכוונת בכוונה ל"הוספה למסך הבית" כקיצור
+  // דרך פשוט (ר' manifest.json: display:"browser"), לא כהתקנת PWA מלאה, כדי לעקוף
+  // לגמרי את בדיקת Google Play Protect שחוסמת חלק ממשתמשי אנדרואיד.
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
   }

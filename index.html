@@ -1561,7 +1561,10 @@ function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
         {err && <p style={S.errText}>{err}</p>}
       </div>
 
-      <input style={{...S.input,marginTop:12}} placeholder="🔍 חיפוש לפי שם…" value={search} onChange={e=>setSearch(e.target.value)} />
+      <div style={{display:"flex",gap:8,marginTop:12}}>
+        <input style={S.input} placeholder="🔍 חיפוש לפי שם…" value={search} onChange={e=>setSearch(e.target.value)} />
+        {search && <button className="btn small" onClick={()=>setSearch("")}>נקה ✕</button>}
+      </div>
       {q && filtered.length===0 && <p style={S.hint}>לא נמצאו שחקנים.</p>}
 
       <div style={S.rosterGrid}>

@@ -42,5 +42,11 @@ create policy "admin_requests select" on admin_requests for select to public usi
 
 -- game_declines (ר' schema_additions.sql) — אותה מדיניות כמו registrations:
 -- SELECT פתוח לכולם, כל כתיבה רק דרך RPC (decline_game/cancel_own_decline).
+--
+-- הערה חשובה: טבלה שנוצרה דרך SQL Editor (כמו זו) צריכה גם grant מפורש —
+-- מדיניות RLS לבדה לא מספיקה ל-PostgREST. שאר הטבלאות למעלה קדמו לפרויקט
+-- הזה ונוצרו כנראה דרך Table Editor, שמעניק את זה אוטומטית — לכן זו הפעם
+-- הראשונה שהגדרה כזו נדרשה במפורש (ר' migrations/0007).
 drop policy if exists "game_declines select" on game_declines;
 create policy "game_declines select" on game_declines for select to public using (true);
+grant select on game_declines to anon, authenticated;

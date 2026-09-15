@@ -402,11 +402,12 @@ begin
 end; $$;
 
 
--- ============================================================================
--- חלק ב: פונקציות קיימות מראש (נכתבו לפני הפרויקט הזה) — כאן כהפניה בלבד
--- אלה לא נערכו על ידינו; מתועדות כאן כי הגוף שלהן ידוע ומשמש פונקציות אחרות
--- למעלה (בעיקר check_login, שעליה מבוססת require_admin).
--- ============================================================================
+-- אבטחה: סיסמת אדמין-על הייתה שמורה בטקסט גלוי ב-settings.super_pw. הוחלף
+-- בהאש bcrypt (pgcrypto, כבר מותקן בפרויקט) — crypt(value, gen_salt('bf'))
+-- ליצירה, crypt(input, stored_hash) = stored_hash להשוואה (crypt שולפת את
+-- ה-salt מתוך ההאש הקיים בעצמה). זה עדכון לשתי פונקציות שהיו קיימות מראש
+-- (check_login, update_settings) — לכן, בשונה מכל שאר הקובץ, הועברו לכאן
+-- מ"חלק ב'" למטה: מעכשיו הן כן נערכות ומתוחזקות כחלק מהפרויקט הזה.
 
 -- check_login: מאמת סיסמת אדמין-על (input_pw) או PIN אישי של מנהל
 -- (input_phone + input_pin), עם הגבלת קצב (8 ניסיונות שגויים / 10 דקות).
@@ -419,7 +420,7 @@ begin
     select count(*) into fail_count from login_attempts where kind='super' and created_at > now() - (window_minutes||' minutes')::interval;
     if fail_count >= max_attempts then return 'locked'; end if;
     select super_pw into s from settings where id = 1;
-    if input_pw = s.super_pw then
+    if crypt(input_pw, s.super_pw) = s.super_pw then
       delete from login_attempts where kind='super';
       return 'super';
     else
@@ -441,6 +442,24 @@ begin
   end if;
   return null;
 end; $$;
+
+-- update_settings: משנה את סיסמת/טלפון האדמין-על, אחרי אימות הסיסמה
+-- הנוכחית. נקראת דרך update_settings_secure שמוסיפה מעליה דרישת אימות מייל
+-- (ר' למעלה). מ-migration 0005: הסיסמה החדשה נשמרת מוצפנת (bcrypt), לא בטקסט גלוי.
+create or replace function update_settings(current_super_pw text, new_super_pw text, new_super_phone text)
+returns boolean language plpgsql security definer
+set search_path to 'public' as $$
+begin
+  if not exists (select 1 from settings where id = 1 and crypt(current_super_pw, super_pw) = super_pw) then return false; end if;
+  update settings set super_pw = crypt(new_super_pw, gen_salt('bf')), super_phone = new_super_phone where id = 1;
+  return true;
+end; $$;
+
+
+-- ============================================================================
+-- חלק ב: פונקציות קיימות מראש (נכתבו לפני הפרויקט הזה) — כאן כהפניה בלבד
+-- אלה לא נערכו על ידינו; מתועדות כאן כי הגוף שלהן ידוע.
+-- ============================================================================
 
 -- register_for_game: שחקן נרשם לעצמו למשחק. בודקת בעלות אמיתית
 -- (players.auth_user_id = auth.uid()) לפני ההרשמה.
@@ -474,7 +493,6 @@ end; $$;
 -- הפונקציות הבאות קיימות במערכת אך הגוף שלהן לא תועד כאן (לא הוצג לנו
 -- במהלך הפרויקט) — הן קיימות ופועלות, רק שהעתק הקוד שלהן לא נאסף:
 --   login_hint(input_phone)
---   update_settings(current_super_pw, new_super_pw, new_super_phone)
 --   create_admin_invite / list_pending_invites / cancel_admin_invite / redeem_admin_invite
 --   create_pin_reset / list_pending_resets / cancel_pin_reset / redeem_pin_reset
 -- אם ירצו לתעד גם אותן — יש להעתיק את הגוף שלהן מ-Database → Functions

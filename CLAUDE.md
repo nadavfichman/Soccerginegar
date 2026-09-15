@@ -23,7 +23,7 @@
 שלוש רמות, **בלי קשר ל-Supabase Auth**:
 1. **שחקן** — מזוהה דרך Supabase Auth (אימות מייל, `signInWithOtp`). ה-`auth.uid()` מקושר לשורה ב-`players.auth_user_id`.
 2. **מנהל (admin)** — נכנס עם טלפון + PIN אישי (`check_login`). אין לו session Auth אמיתי — רק אישור שנבדק דרך RPC ונשמר ב-state של React (`cred`, ברמת ה-`App` כדי לשרוד מעבר בין מסך שחקן/ניהול).
-3. **אדמין-על (super)** — נכנס עם סיסמה יחידה (בטקסט גלוי ב-`settings.super_pw` — לא מוצפן, ידוע וסיכון נמוך יחסית בגלל ה-RLS, אבל לא אידיאלי). שינוי הסיסמה דורש **גם** אימות מייל אמיתי ל-`nadavfichman@gmail.com` (`update_settings_secure`), לא רק את הסיסמה הנוכחית.
+3. **אדמין-על (super)** — נכנס עם סיסמה יחידה, שמורה מוצפנת (bcrypt, דרך `pgcrypto`) ב-`settings.super_pw` מ-migration 0005 — לא בטקסט גלוי. `check_login` משווה דרך `crypt()`, `update_settings` מצפין סיסמה חדשה דרך `crypt(..., gen_salt('bf'))` לפני שמירה. שינוי הסיסמה דורש **גם** אימות מייל אמיתי ל-`nadavfichman@gmail.com` (`update_settings_secure`), לא רק את הסיסמה הנוכחית.
 
 **כל קריאת RPC ניהולית** מצרפת בשקט את האישורים השמורים (`cred.pw` או `cred.phone`+`cred.pin`) ועוברת דרך `callAdmin()` שחושף שגיאות (לא בולע אותן בשקט — זה בדיוק מה שהסתיר את הבאג המקורי, ר' "באגים משמעותיים" למטה).
 

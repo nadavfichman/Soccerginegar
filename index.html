@@ -605,7 +605,7 @@ function CountdownBanner({ game, now }) {
   const time=new Date(game.kickoff).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"});
   return (
     <section style={S.countdown}>
-      <div style={S.cdHeadline}>רישום למשחק ביום {dow} בשעה {time}</div>
+      <div style={S.cdHeadline}>רישום למשחק {dow} בשעה {time}</div>
       <div style={S.cdTop}>ההרשמה נפתחת בעוד</div>
       <div style={S.cdClock}>
         {d>0 && <><CdUnit val={d} label="ימים"/><span style={S.cdColon}>:</span></>}

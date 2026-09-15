@@ -55,15 +55,15 @@
   }
 
   // ==== מיון עדיפות ====
-  // שכבה: גניגרי+ותיק > גניגרי > ותיק > רגיל. בתוך כל שכבה — מספר ההגעות המצטבר
+  // שכבה: גניגרי+ותיק > ותיק > גניגרי > רגיל. בתוך כל שכבה — מספר ההגעות המצטבר
   // בפועל (attended=true) קובע: כל משחק שהשחקן הגיע אליו מוסיף לו עדיפות, בלי
   // תקרה/סף קבוע — לא "מתמיד כן/לא" חד-פעמי אלא דירוג רציף שממשיך להצטבר.
   function tierRank(reg, roster){
     const p = roster.find(r=>r.id===reg.player_id);
     if(!p) return 0;
     if (p.is_ganigari && p.is_vatik) return 3;
-    if (p.is_ganigari) return 2;
-    if (p.is_vatik) return 1;
+    if (p.is_vatik) return 2;
+    if (p.is_ganigari) return 1;
     return 0;
   }
   function sortRegs(regs, roster, attendanceCounts){

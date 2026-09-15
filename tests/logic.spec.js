@@ -86,11 +86,11 @@ const roster = [
   { id: "p4", name: "גניגרי+ותיק", is_ganigari: true,  is_vatik: true  },
 ];
 
-test("tierRank: גניגרי+ותיק > גניגרי > ותיק > רגיל", () => {
+test("tierRank: גניגרי+ותיק > ותיק > גניגרי > רגיל", () => {
   const rank = (id) => tierRank({ player_id: id }, roster);
-  assert.ok(rank("p4") > rank("p3"));
-  assert.ok(rank("p3") > rank("p2"));
-  assert.ok(rank("p2") > rank("p1"));
+  assert.ok(rank("p4") > rank("p2"));
+  assert.ok(rank("p2") > rank("p3"));
+  assert.ok(rank("p3") > rank("p1"));
 });
 
 test("sortRegs: ממיין לפי שכבה קודם, בלי קשר לזמן הרשמה", () => {

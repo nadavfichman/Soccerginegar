@@ -9,7 +9,7 @@
 - **`schema_additions.sql`** — עמודות שנוספו לטבלאות קיימות (`attended`, `attendance_locked`).
 - **`migrations/`** — היסטוריה כרונולוגית: קובץ אחד לכל שינוי SQL, לפי סדר שקרה בפועל (תואם ל-git log). ר' "מוסכמה קדימה" למטה.
 - **`export_full_schema.sql`** — שאילתת קריאה-בלבד שמייצרת מחדש את ה-`CREATE TABLE`/`INDEX`/`EXTENSION` המקוריים (ר' "גיבוי סכימה מלאה" למטה).
-- **`schema_snapshot_*.sql`** — תוצר ההרצה של `export_full_schema.sql` בפועל, נשמר כקובץ (אם/כאשר הורץ). ר' למטה.
+- **`schema_snapshot_2026-09-15.sql`** — תוצר הרצה בפועל של `export_full_schema.sql`. ר' "גיבוי סכימה מלאה" למטה.
 
 ## מוסכמה קדימה — איך מוסיפים שינוי SQL חדש
 
@@ -24,9 +24,9 @@
 
 הגדרת הטבלאות המקורית (`CREATE TABLE` עם הטיפוסים/האילוצים/ברירות המחדל של `players`, `games`, `registrations`, `player_requests`, `admins`, `admin_requests`, `settings`, `login_attempts`, `admin_invites`, `admin_pin_resets`) נוצרה לפני תחילת העבודה על הפרויקט הזה ומעולם לא הועברה — `functions.sql`/`policies.sql`/`schema_additions.sql` מתעדים רק את מה שהשתנה/נוסף מאז, לא את הבסיס.
 
-**`export_full_schema.sql`** סוגר את הפער: שאילתת קריאה-בלבד שמריצים ב-SQL Editor של Supabase, שמייצרת מחדש את כל ה-`CREATE TABLE`/`INDEX`/`EXTENSION` ישירות מפנקסי המערכת של Postgres עצמו (לא מנחשת — קוראת את המבנה האמיתי). התוצאה (עמודת `stmt`, מלמעלה למטה) היא קובץ SQL אחד שממנו אפשר לשחזר את כל המסד מאפס, יחד עם `functions.sql`+`policies.sql`+`schema_additions.sql`.
+**`export_full_schema.sql`** סוגר את הפער: שאילתת קריאה-בלבד שמריצים ב-SQL Editor של Supabase, שמייצרת מחדש את כל ה-`CREATE TABLE`/`INDEX`/`EXTENSION` ישירות מפנקסי המערכת של Postgres עצמו (לא מנחשת — קוראת את המבנה האמיתי).
 
-**חשוב:** זו שאילתה בלבד — היא לא שומרת כלום אוטומטית. כדי שהתוצאה תהפוך לגיבוי אמיתי צריך להריץ אותה בפועל ב-Supabase ולהעביר את הפלט הלאה (לשמירה בגיט כ-`schema_snapshot_<תאריך>.sql`, לדוגמה). מומלץ לחזור על זה אחרי כל שינוי סכימה משמעותי, לא פעם אחת בלבד.
+**`schema_snapshot_2026-09-15.sql`** הוא תוצר הרצה בפועל של השאילתה הזו (15/9/2026) — קובץ SQL אחד שממנו אפשר לשחזר את כל מבנה הטבלאות מאפס, יחד עם `functions.sql`+`policies.sql`+`schema_additions.sql`. מומלץ להריץ את `export_full_schema.sql` שוב ולשמור snapshot חדש אחרי כל שינוי סכימה משמעותי — לא פעם אחת בלבד.
 
 ## איך להריץ
 

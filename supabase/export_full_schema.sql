@@ -46,7 +46,10 @@ cons as (
 ),
 tables_ddl as (
   select cols.table_name, 1 as ord,
-    format('create table if not exists %I (\n%s%s\n);', cols.table_name,
+    -- הערה: format() לא מפרש \n בתוך מחרוזת '' רגילה (standard_conforming_strings) —
+    -- חייב E'' כדי שהמפריד בין "(" לעמודה הראשונה, ולפני ")", יהיה ירידת שורה אמיתית
+    -- ולא שני התווים "\n" מילוליים (זה מה שקרה בהרצה הראשונה, ר' schema_snapshot).
+    format(E'create table if not exists %I (\n%s%s\n);', cols.table_name,
       cols.cols_sql, coalesce(E',\n' || cons.cons_sql, ''))
     as stmt
   from cols left join cons on cons.table_name = cols.table_name

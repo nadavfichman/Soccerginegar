@@ -455,14 +455,40 @@ begin
   return true;
 end; $$;
 
+-- "לא אגיע" — סימון מפורש שהשחקן לא יגיע למשחק (בשונה מסתם לא להירשם), כדי
+-- שלאדמין יהיה נתון אמיתי כמה אנשים בפועל הודיעו שלא יגיעו. קריאה ישירה
+-- (db.from("game_declines")) מותרת דרך policies.sql, אין צורך ב-RPC לקריאה.
+-- מבטלת אוטומטית הרשמה קיימת אם יש — שני המצבים הדדיים.
+create or replace function decline_game(input_game_id text, input_player_id text)
+returns text language plpgsql security definer as $$
+declare v_uid uuid;
+begin
+  v_uid := auth.uid();
+  if v_uid is null or not exists (select 1 from players where id=input_player_id and auth_user_id=v_uid) then
+    return 'not_authorized';
+  end if;
+  delete from registrations where game_id=input_game_id and player_id=input_player_id;
+  insert into game_declines (game_id, player_id, ts) values (input_game_id, input_player_id, (extract(epoch from now())*1000)::bigint)
+    on conflict (game_id, player_id) do update set ts = excluded.ts;
+  return 'ok';
+end; $$;
 
--- ============================================================================
--- חלק ב: פונקציות קיימות מראש (נכתבו לפני הפרויקט הזה) — כאן כהפניה בלבד
--- אלה לא נערכו על ידינו; מתועדות כאן כי הגוף שלהן ידוע.
--- ============================================================================
+-- cancel_own_decline: שחקן מבטל את הסימון "לא אגיע" (חוזר למצב "לא ענה").
+create or replace function cancel_own_decline(input_game_id text, input_player_id text)
+returns boolean language plpgsql security definer as $$
+declare v_uid uuid;
+begin
+  v_uid := auth.uid();
+  if v_uid is null or not exists (select 1 from players where id=input_player_id and auth_user_id=v_uid) then
+    return false;
+  end if;
+  delete from game_declines where game_id=input_game_id and player_id=input_player_id;
+  return found;
+end; $$;
 
 -- register_for_game: שחקן נרשם לעצמו למשחק. בודקת בעלות אמיתית
--- (players.auth_user_id = auth.uid()) לפני ההרשמה.
+-- (players.auth_user_id = auth.uid()) לפני ההרשמה. מ-migration 0006: מנקה גם
+-- סימון "לא אגיע" קיים, כדי ששני המצבים יישארו הדדיים (לא ניתן להיות גם וגם).
 create or replace function register_for_game(input_game_id text, input_player_id text)
 returns text language plpgsql security definer as $$
 declare v_uid uuid; already_registered boolean;
@@ -473,9 +499,20 @@ begin
   end if;
   select exists(select 1 from registrations where game_id=input_game_id and player_id=input_player_id) into already_registered;
   if already_registered then return 'already_registered'; end if;
+  delete from game_declines where game_id=input_game_id and player_id=input_player_id;
   insert into registrations (game_id, player_id, ts) values (input_game_id, input_player_id, (extract(epoch from now())*1000)::bigint);
   return 'ok';
 end; $$;
+
+
+-- ============================================================================
+-- חלק ב: פונקציות קיימות מראש (נכתבו לפני הפרויקט הזה) — כאן כהפניה בלבד
+-- אלה לא נערכו על ידינו; מתועדות כאן כי הגוף שלהן ידוע.
+--
+-- יוצא דופן: register_for_game הועברה לחלק א' (למעלה, אחרי decline_game)
+-- כי נוספה לה שורה שמנקה סימון "לא אגיע" קיים — מעכשיו נערכת ומתוחזקת
+-- כחלק מהפרויקט הזה, בדיוק כמו check_login/update_settings.
+-- ============================================================================
 
 -- cancel_own_registration: שחקן מבטל את ההרשמה של עצמו. אותה בדיקת בעלות.
 create or replace function cancel_own_registration(input_game_id text, input_player_id text)

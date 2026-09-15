@@ -124,13 +124,14 @@ class ErrorBoundary extends React.Component {
 // ==== שכבת גישה לנתונים ====
 const api = {
   async loadAll() {
-    const [players, preqs, admins, areqs, games, regs] = await Promise.all([
+    const [players, preqs, admins, areqs, games, regs, declines] = await Promise.all([
       db.from("players").select("*"),
       db.from("player_requests").select("*"),
       db.from("admins").select("*"),
       db.from("admin_requests").select("*"),
       db.from("games").select("*"),
       db.from("registrations").select("id, game_id, player_id, ts, attended"),
+      db.from("game_declines").select("game_id, player_id, ts"),
     ]);
     return {
       roster: players.data || [],
@@ -139,6 +140,7 @@ const api = {
       adminReqs: areqs.data || [],
       games: games.data || [],
       regs: regs.data || [],
+      declines: declines.data || [],
     };
   },
   // בדיקת תפקיד — מוגן, לא חושף שום סוד. אף תפקיד לא ניתן לפי טלפון בלבד.
@@ -221,6 +223,7 @@ function App() {
   const [adminReqs, setAdminReqs] = useState([]);
   const [games, setGames] = useState([]);
   const [regs, setRegs] = useState([]);
+  const [declines, setDeclines] = useState([]);
 
   // ==== זהות אמיתית של השחקן — Supabase Auth (אימות מייל) ====
   const [session, setSession] = useState(null);
@@ -270,7 +273,7 @@ function App() {
     try {
       const d = await api.loadAll();
       setRoster(d.roster); setPending(d.pending); setAdmins(d.admins);
-      setAdminReqs(d.adminReqs); setGames(d.games); setRegs(d.regs);
+      setAdminReqs(d.adminReqs); setGames(d.games); setRegs(d.regs); setDeclines(d.declines);
       setErr("");
     } catch(e){ setErr("בעיה בחיבור לשרת. בדוק חיבור אינטרנט."); console.error(e); }
     setLoaded(true);
@@ -286,6 +289,7 @@ function App() {
     id: g.id, kickoff: g.kickoff, opensAt: g.opens_at,
     published: g.published, rosterPublished: g.roster_published, attendanceLocked: !!g.attendance_locked,
     registrations: regs.filter(r => r.game_id === g.id).map(r => ({ playerId: r.player_id, ts: r.ts, attended: !!r.attended })),
+    declines: declines.filter(d => d.game_id === g.id).map(d => ({ playerId: d.player_id, ts: d.ts })),
   }));
 
   // ספירת הגעות מצטברת לכל שחקן — נספרת רק ממשחקים שננעלו. כל עוד משחק פתוח,
@@ -620,6 +624,7 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
   const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts})), roster, attendanceCounts);
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
   const myReg = game.registrations.find(r=>r.playerId===me.id);
+  const myDecline = (game.declines||[]).find(d=>d.playerId===me.id);
   const rosterPublished = game.rosterPublished === true;
   const [busy,setBusy]=useState(false);
 
@@ -640,6 +645,25 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
     else await refresh();
   };
 
+  // "לא אגיע" — סימון מפורש שהשחקן לא מגיע (בשונה מפשוט לא להירשם), כדי
+  // שלאדמין יהיה נתון אמיתי כמה אנשים בפועל לא יגיעו (ר' AdminGameRow). מבטל
+  // אוטומטית הרשמה קיימת אם יש — שני המצבים הדדיים, אי אפשר להיות גם וגם.
+  const [declineErr,setDeclineErr]=useState("");
+  const decline = async () => {
+    if(!isOpen||myDecline||busy) return; setBusy(true); setDeclineErr("");
+    const { data, error } = await db.rpc("decline_game", { input_game_id: game.id, input_player_id: me.id });
+    if (error) setDeclineErr("שגיאה בסימון — נסה שוב.");
+    else if (data === "not_authorized") setDeclineErr("לא ניתן לסמן — יש להתחבר מחדש.");
+    setBusy(false); await refresh();
+  };
+  const cancelDecline = async () => {
+    setDeclineErr(""); setBusy(true);
+    const { error } = await db.rpc("cancel_own_decline", { input_game_id: game.id, input_player_id: me.id });
+    setBusy(false);
+    if (error) setDeclineErr("הביטול נכשל — נסה שוב.");
+    else await refresh();
+  };
+
   return (
     <section style={S.gameCard}>
       <div style={S.gameHead}>
@@ -656,10 +680,20 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
               : <button className="btn cancelBig" onClick={unregister} disabled={busy}>לא מגיע — ביטול הגעה</button>}
             {cancelErr && <p style={S.errText}>{cancelErr}</p>}
           </div>
+        ) : myDecline ? (
+          <div style={S.regBox}>
+            <div style={S.declineConfirm}><span>✕</span> סימנת שלא תגיע למשחק</div>
+            <button className="btn" onClick={cancelDecline} disabled={busy}>בטל סימון</button>
+            {declineErr && <p style={S.errText}>{declineErr}</p>}
+          </div>
         ) : (
           <>
-            <button className="btn primary big" onClick={register} disabled={busy}>{busy?"…":"מגיע ✓"}</button>
+            <div style={{display:"flex", gap:8}}>
+              <button className="btn primary" style={{flex:1, padding:14, fontSize:16}} onClick={register} disabled={busy}>{busy?"…":"מגיע ✓"}</button>
+              <button className="btn danger" style={{flex:1, padding:14, fontSize:16}} onClick={decline} disabled={busy}>לא אגיע</button>
+            </div>
             {regErr && <p style={S.errText}>{regErr}</p>}
+            {declineErr && <p style={S.errText}>{declineErr}</p>}
           </>
         )
       ) : <button className="btn big" disabled>ההרשמה עדיין סגורה</button>}
@@ -1370,6 +1404,9 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
         <span style={S.pubText}>{game.attendanceLocked?("🔒 נוכחות נעולה — משחק "+dayName(game.kickoff)+" "+dateOnly(game.kickoff)+". ספירת ההגעות המצטברת כוללת אותו."):"נוכחות פתוחה לעריכה — עדיין לא נספר בעדיפות, עד שתנעל"}</span>
         <button className={game.attendanceLocked?"btn small":"btn primary small"} onClick={()=>setAttendanceLocked(!game.attendanceLocked)}>{game.attendanceLocked?"🔓 פתח לעריכה":"🔒 נעל משחק"}</button>
       </div>
+      {(game.declines||[]).length > 0 && (
+        <div style={S.declineSummary}>❌ לא מגיעים ({game.declines.length}): {game.declines.map(d=>nameOf(d.playerId)).join(", ")}</div>
+      )}
       <div style={S.adminList}>
         <div style={S.rowBetween}>
           <div style={S.listTitle}>משתתפים ({main.length}/{MAX_PLAYERS})</div>
@@ -1692,6 +1729,8 @@ const S = {
   regBox: { display:"flex", flexDirection:"column", gap:10, margin:"12px 0" },
   regConfirm: { display:"flex", alignItems:"center", gap:8, fontWeight:800, fontSize:17, color:"#166534", background:"#dcfce7", padding:"12px 14px", borderRadius:10, justifyContent:"center" },
   regCheck: { display:"inline-flex", width:24, height:24, borderRadius:"50%", background:"#16a34a", color:"#fff", alignItems:"center", justifyContent:"center", fontSize:14 },
+  declineConfirm: { display:"flex", alignItems:"center", gap:8, fontWeight:800, fontSize:17, color:"#991b1b", background:"#fee2e2", padding:"12px 14px", borderRadius:10, justifyContent:"center" },
+  declineSummary: { fontSize:13, color:"#991b1b", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:"9px 11px", marginTop:10 },
   lockedNote: { fontSize:13, color:"#5b6b5b", background:"#f2f6f0", padding:"11px 12px", borderRadius:10, textAlign:"center" },
   pendingRoster: { marginTop:12, fontSize:13, color:"#92400e", background:"#fef3c7", padding:"10px 12px", borderRadius:8, textAlign:"center" },
   publishedTag: { marginTop:12, marginBottom:4, fontSize:12, fontWeight:700, color:"#166534" },

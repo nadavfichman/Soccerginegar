@@ -39,3 +39,8 @@ create policy "admins select" on admins for select to public using (true);
 
 drop policy if exists "allow all admin_requests" on admin_requests;
 create policy "admin_requests select" on admin_requests for select to public using (true);
+
+-- game_declines (ר' schema_additions.sql) — אותה מדיניות כמו registrations:
+-- SELECT פתוח לכולם, כל כתיבה רק דרך RPC (decline_game/cancel_own_decline).
+drop policy if exists "game_declines select" on game_declines;
+create policy "game_declines select" on game_declines for select to public using (true);

@@ -605,7 +605,7 @@ function CountdownBanner({ game, now }) {
   const time=new Date(game.kickoff).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"});
   return (
     <section style={S.countdown}>
-      <div style={S.cdHeadline}>רישום למשחק {dow} בשעה {time}</div>
+      <div style={S.cdHeadline}>רישום למשחק ב{dow} בשעה {time}</div>
       <div style={S.cdTop}>ההרשמה נפתחת בעוד</div>
       <div style={S.cdClock}>
         {d>0 && <><CdUnit val={d} label="ימים"/><span style={S.cdColon}>:</span></>}
@@ -669,7 +669,7 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
       {isOpen ? (
         <div style={S.openBanner}>
           <div style={S.openBannerTitle}>🟢 ההרשמה פתוחה</div>
-          <div style={S.openBannerSub}>למשחק {dayName(game.kickoff)} בשעה {fmtTime(game.kickoff)}</div>
+          <div style={S.openBannerSub}>למשחק ב{dayName(game.kickoff)} בשעה {fmtTime(game.kickoff)}</div>
         </div>
       ) : (
         <div style={S.gameHead}>

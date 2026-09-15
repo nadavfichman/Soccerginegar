@@ -1444,6 +1444,7 @@ function EditableRow({ i, name, onUp, onDown, onRemove, wait, attended, onToggle
 }
 
 function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
+  const [search,setSearch]=useState("");
   const [name,setName]=useState(""); const [phone,setPhone]=useState("");
   const [newGanigari,setNewGanigari]=useState(false); const [newVatik,setNewVatik]=useState(false);
   const [err,setErr]=useState("");
@@ -1501,6 +1502,11 @@ function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
 
   const rankOf = p => (p.is_ganigari && p.is_vatik) ? 4 : p.is_ganigari ? 3 : p.is_vatik ? 2 : 1;
   const sorted = [...roster].sort((a,b) => rankOf(b) - rankOf(a));
+  // מסנן תצוגה בלבד — exportExcel/shareRosterWa ממשיכים לעבוד על כל הרשימה
+  // (sorted), לא על מה שמסונן כרגע בחיפוש. המספור נשאר לפי המיקום המקורי
+  // ברשימה המלאה (לא ממוספר מחדש לפי תוצאות החיפוש).
+  const q = normName(search);
+  const filtered = sorted.map((p,i)=>({p,i})).filter(({p}) => !q || normName(p.name).includes(q));
 
   const statusLabel = p => {
     if (p.is_ganigari && p.is_vatik) return "גניגרי + ותיק";
@@ -1555,8 +1561,11 @@ function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
         {err && <p style={S.errText}>{err}</p>}
       </div>
 
+      <input style={{...S.input,marginTop:12}} placeholder="🔍 חיפוש לפי שם…" value={search} onChange={e=>setSearch(e.target.value)} />
+      {q && filtered.length===0 && <p style={S.hint}>לא נמצאו שחקנים.</p>}
+
       <div style={S.rosterGrid}>
-        {sorted.map((p,i)=>{
+        {filtered.map(({p,i})=>{
           const isAdmin = admins.some(a=>a.phone===p.phone);
           return (
             <div key={p.id} style={S.rosterCard}>

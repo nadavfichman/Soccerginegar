@@ -671,7 +671,6 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
         <span className={isOpen?"pill open":"pill closed"}>{isOpen?"פתוח להרשמה":"סגור"}</span>
       </div>
       {isOpen && <div style={S.liveCountBar}>👥 {game.registrations.length} נרשמו עד כה למשחק</div>}
-      {!isOpen && <div style={S.opensRow}>ההרשמה נפתחת: <b>{fmt(game.opensAt)}</b> · עוד <b>{countdown(game.opensAt-now)}</b></div>}
       {isOpen ? (
         myReg ? (
           <div style={S.regBox}>
@@ -1740,7 +1739,6 @@ const S = {
   gameCard: { background:"#fff", borderRadius:14, padding:16, boxShadow:"0 1px 3px rgba(0,0,0,.06)" },
   gameHead: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 },
   gameDay: { fontWeight:800, fontSize:17, color:"#166534" }, gameTime:{ fontSize:13, color:"#5b6b5b" },
-  opensRow: { fontSize:13, background:"#fef3c7", color:"#92400e", padding:"8px 10px", borderRadius:8, marginBottom:10 },
   liveCountBar: { fontSize:13, fontWeight:600, color:"#166534", background:"#f0fdf4", border:"1px solid #bbf7d0", padding:"8px 10px", borderRadius:8, marginBottom:10, textAlign:"center" },
   regBox: { display:"flex", flexDirection:"column", gap:10, margin:"12px 0" },
   regConfirm: { display:"flex", alignItems:"center", gap:8, fontWeight:800, fontSize:17, color:"#166534", background:"#dcfce7", padding:"12px 14px", borderRadius:10, justifyContent:"center" },

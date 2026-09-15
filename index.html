@@ -669,7 +669,7 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
       {isOpen ? (
         <div style={S.openBanner}>
           <div style={S.openBannerTitle}>🟢 ההרשמה פתוחה</div>
-          <div style={S.openBannerSub}>למשחק ביום {dayName(game.kickoff)} בשעה {fmtTime(game.kickoff)}</div>
+          <div style={S.openBannerSub}>למשחק {dayName(game.kickoff)} בשעה {fmtTime(game.kickoff)}</div>
         </div>
       ) : (
         <div style={S.gameHead}>

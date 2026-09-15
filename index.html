@@ -430,7 +430,8 @@ function PlayerView({ roster, pending, games, session, identity, now, refresh, l
 // מסך הצטרפות — שם, טלפון ומייל בטופס אחד. הפרטים נשמרים מקומית לפני האימות,
 // ונשלחים אוטומטית לאחר שהמייל אומת — בלי טופס נוסף.
 //
-// אימות בקוד בן 6 ספרות (לא קישור-ללחיצה): קישורי אימות נופלים קורבן לסריקה
+// אימות בקוד מספרי (לא קישור-ללחיצה, אורך הקוד תלוי בהגדרות Supabase ולא
+// מקובע כאן): קישורי אימות נופלים קורבן לסריקה
 // אוטומטית של Gmail (Safe Browsing) שמבקרת בקישור לפני שהמשתמש בכלל לוחץ
 // עליו, "צורבת" את השימוש החד-פעמי, ומשאירה את המשתמש תקוע בלולאה בלי שום
 // הסבר (ר' authError למעלה). קוד שמוקלד ידנית לא ניתן ל"סריקה מראש" כי אין
@@ -466,7 +467,7 @@ function JoinScreen({ roster, pending, authError }) {
 
   const verify = async () => {
     setErr("");
-    if (!/^\d{6}$/.test(code.trim())) { setErr("הקוד הוא 6 ספרות"); return; }
+    if (!/^\d{4,10}$/.test(code.trim())) { setErr("נא להזין את הקוד שקיבלת במייל"); return; }
     setVerifying(true);
     const { error } = await db.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: "email" });
     setVerifying(false);
@@ -480,12 +481,15 @@ function JoinScreen({ roster, pending, authError }) {
         <section style={S.card}>
           <div style={S.waitBig}>📧</div>
           <h2 style={S.centerTitle}>הזן את הקוד שקיבלת</h2>
-          <p style={S.centerText}>שלחנו קוד אימות בן 6 ספרות לכתובת {email}.</p>
-          <input style={{...S.input, textAlign:"center", fontSize:24, letterSpacing:6}} value={code}
-            onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))}
-            placeholder="000000" inputMode="numeric" maxLength={6} onKeyDown={e=>e.key==="Enter"&&verify()} />
+          <p style={S.centerText}>שלחנו קוד אימות לכתובת {email}.</p>
+          {/* לא נקבע אורך קבוע (maxLength/regex) בכוונה — אורך הקוד נקבע ע"י הגדרות
+              Supabase (Authentication → Providers → Email) ולא בשליטת הקוד כאן;
+              קיבוע ל-6 ספרות גרם לבאג אמיתי כשהפרויקט הזה שולח קוד בן 8 ספרות. */}
+          <input style={{...S.input, textAlign:"center", fontSize:24, letterSpacing:4}} value={code}
+            onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,10))}
+            placeholder="הקוד מהמייל" inputMode="numeric" onKeyDown={e=>e.key==="Enter"&&verify()} />
           {err && <p style={S.errText}>{err}</p>}
-          <button className="btn primary" style={{marginTop:10,width:"100%"}} onClick={verify} disabled={verifying || code.length!==6}>{verifying?"מאמת…":"אמת קוד"}</button>
+          <button className="btn primary" style={{marginTop:10,width:"100%"}} onClick={verify} disabled={verifying || code.trim().length<4}>{verifying?"מאמת…":"אמת קוד"}</button>
           <p style={{...S.centerText,fontSize:13,color:"#9ca79c",marginTop:10}}>
             לא רואה את המייל? בדוק גם בתיקיית הספאם. <span style={S.linkText} onClick={resend}>{busy?"שולח…":"שלח קוד חדש"}</span>
             {" · "}<span style={S.linkText} onClick={()=>{setSent(false);setCode("");setErr("");}}>חזרה לעריכת הפרטים</span>

@@ -429,9 +429,18 @@ function PlayerView({ roster, pending, games, session, identity, now, refresh, l
 
 // מסך הצטרפות — שם, טלפון ומייל בטופס אחד. הפרטים נשמרים מקומית לפני האימות,
 // ונשלחים אוטומטית לאחר שהמייל אומת — בלי טופס נוסף.
+//
+// אימות בקוד בן 6 ספרות (לא קישור-ללחיצה): קישורי אימות נופלים קורבן לסריקה
+// אוטומטית של Gmail (Safe Browsing) שמבקרת בקישור לפני שהמשתמש בכלל לוחץ
+// עליו, "צורבת" את השימוש החד-פעמי, ומשאירה את המשתמש תקוע בלולאה בלי שום
+// הסבר (ר' authError למעלה). קוד שמוקלד ידנית לא ניתן ל"סריקה מראש" כי אין
+// קישור בכלל — verifyOtp() יוצר session ישירות, בלי redirect. דורש שגם
+// תבנית המייל ב-Supabase (Authentication → Email Templates → Magic Link)
+// תציג את {{ .Token }} ולא תכלול קישור לחיצה, אחרת הבעיה חוזרת.
 function JoinScreen({ roster, pending, authError }) {
   const [name,setName]=useState(""); const [phone,setPhone]=useState(""); const [email,setEmail]=useState("");
   const [err,setErr]=useState(""); const [sent,setSent]=useState(false); const [busy,setBusy]=useState(false);
+  const [code,setCode]=useState(""); const [verifying,setVerifying]=useState(false);
 
   const submit = async () => {
     setErr("");
@@ -442,10 +451,27 @@ function JoinScreen({ roster, pending, authError }) {
     if (dupErr) { setErr(dupErr); return; }
     setBusy(true);
     try { localStorage.setItem("pendingJoin", JSON.stringify({ name: name.trim(), phone: normPhone(phone) })); } catch {}
-    const { error } = await db.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: window.location.href } });
+    const { error } = await db.auth.signInWithOtp({ email: email.trim() });
     setBusy(false);
     if (error) { setErr("שגיאה בשליחה — נסה שוב"); return; }
     setSent(true);
+  };
+
+  const resend = async () => {
+    setErr(""); setCode(""); setBusy(true);
+    const { error } = await db.auth.signInWithOtp({ email: email.trim() });
+    setBusy(false);
+    if (error) setErr("שגיאה בשליחה — נסה שוב");
+  };
+
+  const verify = async () => {
+    setErr("");
+    if (!/^\d{6}$/.test(code.trim())) { setErr("הקוד הוא 6 ספרות"); return; }
+    setVerifying(true);
+    const { error } = await db.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: "email" });
+    setVerifying(false);
+    if (error) { setErr("קוד שגוי או שפג תוקפו. אפשר לבקש קוד חדש למטה."); return; }
+    // session מתעדכן אוטומטית דרך onAuthStateChange ב-App — אין צורך בניווט ידני
   };
 
   if (sent) {
@@ -453,9 +479,17 @@ function JoinScreen({ roster, pending, authError }) {
       <main style={S.main}>
         <section style={S.card}>
           <div style={S.waitBig}>📧</div>
-          <h2 style={S.centerTitle}>בדוק את המייל שלך</h2>
-          <p style={S.centerText}>שלחנו קישור כניסה לכתובת {email}. פתח את המייל ולחץ על הקישור — הפרטים שהזנת יישלחו אוטומטית, בלי שתצטרך למלא שוב.</p>
-          <p style={{...S.centerText,fontSize:13,color:"#9ca79c"}}>לא רואה את המייל? בדוק גם בתיקיית הספאם / קידומים.</p>
+          <h2 style={S.centerTitle}>הזן את הקוד שקיבלת</h2>
+          <p style={S.centerText}>שלחנו קוד אימות בן 6 ספרות לכתובת {email}.</p>
+          <input style={{...S.input, textAlign:"center", fontSize:24, letterSpacing:6}} value={code}
+            onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))}
+            placeholder="000000" inputMode="numeric" maxLength={6} onKeyDown={e=>e.key==="Enter"&&verify()} />
+          {err && <p style={S.errText}>{err}</p>}
+          <button className="btn primary" style={{marginTop:10,width:"100%"}} onClick={verify} disabled={verifying || code.length!==6}>{verifying?"מאמת…":"אמת קוד"}</button>
+          <p style={{...S.centerText,fontSize:13,color:"#9ca79c",marginTop:10}}>
+            לא רואה את המייל? בדוק גם בתיקיית הספאם. <span style={S.linkText} onClick={resend}>{busy?"שולח…":"שלח קוד חדש"}</span>
+            {" · "}<span style={S.linkText} onClick={()=>{setSent(false);setCode("");setErr("");}}>חזרה לעריכת הפרטים</span>
+          </p>
         </section>
       </main>
     );
@@ -468,7 +502,7 @@ function JoinScreen({ roster, pending, authError }) {
         <p style={S.centerText}>מלא את הפרטים ואמת את המייל שלך — פעם אחת בלבד, כדי לוודא שזה באמת אתה.</p>
         {authError && (
           <p style={{...S.errText, background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:10}}>
-            ⚠️ הקישור שקיבלת במייל פג תוקף או כבר נוצל (זה קורה לפעמים אוטומטית עם Gmail). מלא שוב את הפרטים ולחץ על הכפתור — קישור חדש יישלח.
+            ⚠️ האימות נכשל או פג תוקף. מלא שוב את הפרטים ולחץ על הכפתור — קוד אימות חדש יישלח.
           </p>
         )}
 
@@ -480,7 +514,7 @@ function JoinScreen({ roster, pending, authError }) {
         <label style={{...S.label,marginTop:12}}>כתובת מייל</label>
         <input style={S.input} value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" type="email" onKeyDown={e=>e.key==="Enter"&&submit()} />
         {err && <p style={S.errText}>{err}</p>}
-        <button className="btn primary" style={{marginTop:14,width:"100%"}} onClick={submit} disabled={busy}>{busy?"שולח…":"שלח לי קישור אימות"}</button>
+        <button className="btn primary" style={{marginTop:14,width:"100%"}} onClick={submit} disabled={busy}>{busy?"שולח…":"שלח לי קוד אימות"}</button>
       </section>
     </main>
   );

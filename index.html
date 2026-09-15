@@ -683,7 +683,9 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
         ) : myDecline ? (
           <div style={S.regBox}>
             <div style={S.declineConfirm}><span>✕</span> סימנת שלא תגיע למשחק</div>
+            <button className="btn primary big" onClick={register} disabled={busy}>{busy?"…":"בעצם כן מגיע ✓"}</button>
             <button className="btn" onClick={cancelDecline} disabled={busy}>בטל סימון</button>
+            {regErr && <p style={S.errText}>{regErr}</p>}
             {declineErr && <p style={S.errText}>{declineErr}</p>}
           </div>
         ) : (

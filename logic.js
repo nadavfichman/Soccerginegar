@@ -13,6 +13,8 @@
 
   // ==== עזרי זמן ====
   const fmt = (ts) => new Date(ts).toLocaleString("he-IL", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  // כמו fmt, בלי שם היום — לשימוש רק כשdayName כבר מוצג צמוד (אחרת כפילות: "יום שישי" + "יום ו', 18.09")
+  const fmtDateTime = (ts) => new Date(ts).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const dateOnly = (ts) => new Date(ts).toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" });
   const dayName = (ts) => new Date(ts).toLocaleDateString("he-IL", { weekday: "long" });
   function countdown(ms) {
@@ -78,7 +80,7 @@
   }
 
   return {
-    fmt, dateOnly, dayName, countdown,
+    fmt, fmtDateTime, dateOnly, dayName, countdown,
     normPhone, validName, normName, validPhone, normEmail, validEmail, sameEmail,
     findDuplicate, tierRank, sortRegs,
   };

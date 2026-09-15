@@ -64,7 +64,7 @@ const MAX_PLAYERS = 22;
 // (גם tests/logic.spec.js טוען את אותו קובץ, כדי שהבדיקות תמיד יבדקו בדיוק
 // את הקוד שרץ כאן, לא עותק נפרד).
 const {
-  fmt, dateOnly, dayName, countdown,
+  fmt, fmtDateTime, dateOnly, dayName, countdown,
   normPhone, validName, normName, validPhone, normEmail, validEmail, sameEmail,
   findDuplicate, tierRank, sortRegs,
 } = AppLogic;
@@ -667,7 +667,7 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
   return (
     <section style={S.gameCard}>
       <div style={S.gameHead}>
-        <div><div style={S.gameDay}>{dayName(game.kickoff)}</div><div style={S.gameTime}>{fmt(game.kickoff)}</div></div>
+        <div><div style={S.gameDay}>{dayName(game.kickoff)}</div><div style={S.gameTime}>{fmtDateTime(game.kickoff)}</div></div>
         {isOpen && <span className="pill open">פתוח להרשמה</span>}
       </div>
       {isOpen && <div style={S.liveCountBar}>👥 {game.registrations.length} נרשמו עד כה למשחק</div>}
@@ -1357,7 +1357,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
     await refresh();
   };
   const buildWa = () => {
-    const lines=["⚽ כדורגל גניגרי ושות'", "משחק "+dayName(game.kickoff)+" · "+fmt(game.kickoff), "", "משתתפים ("+main.length+"/"+MAX_PLAYERS+"):"];
+    const lines=["⚽ כדורגל גניגרי ושות'", "משחק "+dayName(game.kickoff)+" · "+fmtDateTime(game.kickoff), "", "משתתפים ("+main.length+"/"+MAX_PLAYERS+"):"];
     main.forEach((r,i)=>lines.push((i+1)+". "+nameOf(r.player_id)));
     if (wait.length>0){ lines.push(""); lines.push("רשימת המתנה ("+wait.length+"):"); wait.forEach((r,i)=>lines.push((i+1)+". "+nameOf(r.player_id))); }
     return lines.join("\n");
@@ -1382,7 +1382,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
   return (
     <div style={S.adminGame}>
       <div style={S.rowBetween}>
-        <div><b>{dayName(game.kickoff)}</b> · {fmt(game.kickoff)}<div style={S.subLine}>פתיחה: {fmt(game.opensAt)} {isOpen?"· פתוח":"· טרם נפתח"}</div></div>
+        <div><b>{dayName(game.kickoff)}</b> · {fmtDateTime(game.kickoff)}<div style={S.subLine}>פתיחה: {fmt(game.opensAt)} {isOpen?"· פתוח":"· טרם נפתח"}</div></div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
           <span className={game.published?"pill open":"pill closed"}>{game.published?"מפורסם":"טיוטה"}</span>
           <button className={game.published?"btn small":"btn primary small"} onClick={()=>setGameField({published:!game.published})}>{game.published?"בטל פרסום":"פרסם"}</button>

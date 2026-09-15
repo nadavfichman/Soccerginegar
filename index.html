@@ -418,6 +418,11 @@ function PlayerView({ roster, pending, games, session, identity, now, refresh, l
 
   const visible = games.filter(g => g.published !== false).sort((a,b)=>a.kickoff-b.kickoff);
   const nextToOpen = visible.filter(g => now < g.opensAt).sort((a,b)=>a.opensAt-b.opensAt)[0];
+  // הבאנר תמיד מוצג מעל הכרטיס הראשון ברשימה — אם המשחק הבא-להיפתח הוא גם
+  // המשחק הראשון (אין משחק פתוח שמופיע לפניו), הבאנר צמוד ישירות לכרטיס
+  // שלו, ואז כותרת היום/שעה של הכרטיס עצמו מיותרת (כפילות ממש צמודה).
+  // אם הוא לא ראשון — הבאנר רחוק מהכרטיס, וצריך שהכרטיס יציג את זה בעצמו.
+  const bannerAdjacentGameId = (nextToOpen && visible[0] && visible[0].id===nextToOpen.id) ? nextToOpen.id : null;
 
   return (
     <main style={S.main}>
@@ -426,7 +431,7 @@ function PlayerView({ roster, pending, games, session, identity, now, refresh, l
       </section>
       {nextToOpen && <CountdownBanner game={nextToOpen} now={now} />}
       {visible.length===0 && <div style={S.empty}>אין כרגע משחקים מפורסמים.</div>}
-      {visible.map(g => <GameCard key={g.id} game={g} roster={roster} me={me} now={now} refresh={refresh} attendanceCounts={attendanceCounts} />)}
+      {visible.map(g => <GameCard key={g.id} game={g} roster={roster} me={me} now={now} refresh={refresh} attendanceCounts={attendanceCounts} hideHeader={g.id===bannerAdjacentGameId} />)}
     </main>
   );
 }
@@ -619,7 +624,7 @@ function CountdownBanner({ game, now }) {
 }
 function CdUnit({val,label}){ return <div style={S.cdUnit}><div style={S.cdNum}>{val}</div><div style={S.cdLabel}>{label}</div></div>; }
 
-function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
+function GameCard({ game, roster, me, now, refresh, attendanceCounts, hideHeader }) {
   const isOpen = now >= game.opensAt;
   const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts})), roster, attendanceCounts);
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
@@ -671,7 +676,7 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
           <div style={S.openBannerTitle}>🟢 ההרשמה פתוחה</div>
           <div style={S.openBannerSub}>למשחק ב{dayName(game.kickoff)} בשעה {fmtTime(game.kickoff)}</div>
         </div>
-      ) : (
+      ) : !hideHeader && (
         <div style={S.gameHead}>
           <div><div style={S.gameDay}>{dayName(game.kickoff)}</div><div style={S.gameTime}>{fmtTime(game.kickoff)}</div></div>
         </div>

@@ -64,7 +64,7 @@ const MAX_PLAYERS = 22;
 // (גם tests/logic.spec.js טוען את אותו קובץ, כדי שהבדיקות תמיד יבדקו בדיוק
 // את הקוד שרץ כאן, לא עותק נפרד).
 const {
-  fmt, fmtDateTime, dateOnly, dayName, countdown,
+  fmt, fmtDateTime, fmtTime, dateOnly, dayName, countdown,
   normPhone, validName, normName, validPhone, normEmail, validEmail, sameEmail,
   findDuplicate, tierRank, sortRegs,
 } = AppLogic;
@@ -667,7 +667,7 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
   return (
     <section style={S.gameCard}>
       <div style={S.gameHead}>
-        <div><div style={S.gameDay}>{dayName(game.kickoff)}</div><div style={S.gameTime}>{fmtDateTime(game.kickoff)}</div></div>
+        <div><div style={S.gameDay}>{dayName(game.kickoff)}</div><div style={S.gameTime}>{fmtTime(game.kickoff)}</div></div>
         {isOpen && <span className="pill open">פתוח להרשמה</span>}
       </div>
       {isOpen && <div style={S.liveCountBar}>👥 {game.registrations.length} נרשמו עד כה למשחק</div>}

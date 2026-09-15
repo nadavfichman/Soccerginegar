@@ -666,10 +666,16 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
 
   return (
     <section style={S.gameCard}>
-      <div style={S.gameHead}>
-        <div><div style={S.gameDay}>{dayName(game.kickoff)}</div><div style={S.gameTime}>{fmtTime(game.kickoff)}</div></div>
-        {isOpen && <span className="pill open">פתוח להרשמה</span>}
-      </div>
+      {isOpen ? (
+        <div style={S.openBanner}>
+          <div style={S.openBannerTitle}>🟢 ההרשמה פתוחה</div>
+          <div style={S.openBannerSub}>למשחק ביום {dayName(game.kickoff)} בשעה {fmtTime(game.kickoff)}</div>
+        </div>
+      ) : (
+        <div style={S.gameHead}>
+          <div><div style={S.gameDay}>{dayName(game.kickoff)}</div><div style={S.gameTime}>{fmtTime(game.kickoff)}</div></div>
+        </div>
+      )}
       {isOpen && <div style={S.liveCountBar}>👥 {game.registrations.length} נרשמו עד כה למשחק</div>}
       {isOpen ? (
         myReg ? (
@@ -1739,6 +1745,9 @@ const S = {
   gameCard: { background:"#fff", borderRadius:14, padding:16, boxShadow:"0 1px 3px rgba(0,0,0,.06)" },
   gameHead: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 },
   gameDay: { fontWeight:800, fontSize:17, color:"#166534" }, gameTime:{ fontSize:13, color:"#5b6b5b" },
+  openBanner: { textAlign:"center", padding:"12px 10px", borderRadius:10, background:"#dcfce7", marginBottom:10 },
+  openBannerTitle: { fontWeight:800, fontSize:18, color:"#166534" },
+  openBannerSub: { fontWeight:700, fontSize:15, color:"#166534", marginTop:4 },
   liveCountBar: { fontSize:13, fontWeight:600, color:"#166534", background:"#f0fdf4", border:"1px solid #bbf7d0", padding:"8px 10px", borderRadius:8, marginBottom:10, textAlign:"center" },
   regBox: { display:"flex", flexDirection:"column", gap:10, margin:"12px 0" },
   regConfirm: { display:"flex", alignItems:"center", gap:8, fontWeight:800, fontSize:17, color:"#166534", background:"#dcfce7", padding:"12px 14px", borderRadius:10, justifyContent:"center" },

@@ -228,6 +228,22 @@ function App() {
   const [identityLoaded, setIdentityLoaded] = useState(false);
   const myPhone = identity ? identity.phone : null; // נגזר מהזהות המאומתת, לרמז ניהול בלבד
 
+  // קישור אימות שפג/נוצל כבר (למשל אימייל שסרק אותו אוטומטית לפני שהמשתמש
+  // לחץ, תופעה נפוצה ב-Gmail) גורם ל-Supabase להפנות חזרה עם שגיאה ב-URL
+  // (#error=...) בלי ליצור session — בלי הטיפול הזה, המשתמש פשוט חוזר למסך
+  // ההצטרפות הריק שוב ושוב, בלי שום הסבר למה (נראה כאילו "כלום לא קורה").
+  const [authError, setAuthError] = useState("");
+  useEffect(() => {
+    const hash = window.location.hash || "";
+    if (hash.includes("error=")) {
+      const params = new URLSearchParams(hash.replace(/^#/, ""));
+      const desc = (params.get("error_description") || params.get("error_code") || params.get("error") || "").replace(/\+/g, " ");
+      setAuthError(desc || "אימות נכשל");
+      logClientError(desc || "auth redirect error", "", "magic-link-redirect");
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }, []);
+
   const loadIdentity = async () => {
     const { data: { session: s } } = await db.auth.getSession();
     setSession(s);
@@ -286,7 +302,7 @@ function App() {
       <Header view={view} setView={setView} />
       {err && <div style={S.errBar}>{err}</div>}
       {view === "player" ? (
-        <PlayerView {...{ roster, pending, games: gamesWithRegs, session, identity, now, refresh, loadIdentity, attendanceCounts }} />
+        <PlayerView {...{ roster, pending, games: gamesWithRegs, session, identity, now, refresh, loadIdentity, attendanceCounts, authError }} />
       ) : (
         <AdminView {...{ roster, pending, games: gamesWithRegs, now, role, setRole,
           admins, myPhone, refresh, session, cred, setCred, attendanceCounts }} />
@@ -369,12 +385,12 @@ function InstallButton() {
 // ============================================================================
 // צד שחקן
 // ============================================================================
-function PlayerView({ roster, pending, games, session, identity, now, refresh, loadIdentity, attendanceCounts }) {
+function PlayerView({ roster, pending, games, session, identity, now, refresh, loadIdentity, attendanceCounts, authError }) {
   const signOut = async () => { try { localStorage.removeItem("pendingJoin"); } catch {} await db.auth.signOut(); await loadIdentity(); };
 
   // אין חיבור מאומת כלל — טופס הצטרפות מלא (שם+טלפון+מייל) לפני האימות
   if (!session) {
-    return <JoinScreen roster={roster} pending={pending} />;
+    return <JoinScreen roster={roster} pending={pending} authError={authError} />;
   }
   // מחובר אך אין עדיין שחקן/בקשה מקושרים — שולח אוטומטית את הפרטים שנשמרו לפני האימות
   if (!identity) {
@@ -413,7 +429,7 @@ function PlayerView({ roster, pending, games, session, identity, now, refresh, l
 
 // מסך הצטרפות — שם, טלפון ומייל בטופס אחד. הפרטים נשמרים מקומית לפני האימות,
 // ונשלחים אוטומטית לאחר שהמייל אומת — בלי טופס נוסף.
-function JoinScreen({ roster, pending }) {
+function JoinScreen({ roster, pending, authError }) {
   const [name,setName]=useState(""); const [phone,setPhone]=useState(""); const [email,setEmail]=useState("");
   const [err,setErr]=useState(""); const [sent,setSent]=useState(false); const [busy,setBusy]=useState(false);
 
@@ -450,6 +466,11 @@ function JoinScreen({ roster, pending }) {
       <section style={S.card}>
         <h2 style={S.centerTitle}>הצטרפות לקבוצה</h2>
         <p style={S.centerText}>מלא את הפרטים ואמת את המייל שלך — פעם אחת בלבד, כדי לוודא שזה באמת אתה.</p>
+        {authError && (
+          <p style={{...S.errText, background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:10}}>
+            ⚠️ הקישור שקיבלת במייל פג תוקף או כבר נוצל (זה קורה לפעמים אוטומטית עם Gmail). מלא שוב את הפרטים ולחץ על הכפתור — קישור חדש יישלח.
+          </p>
+        )}
 
         <label style={S.label}>שם מלא</label>
         <input style={S.input} value={name} onChange={e=>setName(e.target.value)} placeholder="ישראל ישראלי" />

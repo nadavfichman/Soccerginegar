@@ -668,7 +668,7 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
     <section style={S.gameCard}>
       <div style={S.gameHead}>
         <div><div style={S.gameDay}>{dayName(game.kickoff)}</div><div style={S.gameTime}>{fmt(game.kickoff)}</div></div>
-        <span className={isOpen?"pill open":"pill closed"}>{isOpen?"פתוח להרשמה":"סגור"}</span>
+        {isOpen && <span className="pill open">פתוח להרשמה</span>}
       </div>
       {isOpen && <div style={S.liveCountBar}>👥 {game.registrations.length} נרשמו עד כה למשחק</div>}
       {isOpen ? (
@@ -698,7 +698,7 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
             {declineErr && <p style={S.errText}>{declineErr}</p>}
           </>
         )
-      ) : <button className="btn big" disabled>ההרשמה עדיין סגורה</button>}
+      ) : <div style={S.closedNote}>ההרשמה עדיין סגורה</div>}
       {rosterPublished ? (
         <><div style={S.publishedTag}>רשימת המשתתפים פורסמה</div>
         <PlayerRosterList main={main} wait={wait} roster={roster} meId={me.id} /></>
@@ -1745,6 +1745,7 @@ const S = {
   regCheck: { display:"inline-flex", width:24, height:24, borderRadius:"50%", background:"#16a34a", color:"#fff", alignItems:"center", justifyContent:"center", fontSize:14 },
   declineConfirm: { display:"flex", alignItems:"center", gap:8, fontWeight:800, fontSize:17, color:"#991b1b", background:"#fee2e2", padding:"12px 14px", borderRadius:10, justifyContent:"center" },
   declineSummary: { fontSize:13, color:"#991b1b", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:"9px 11px", marginTop:10 },
+  closedNote: { textAlign:"center", padding:14, borderRadius:10, background:"#f2f6f0", color:"#3f4a3f", fontWeight:700, fontSize:15 },
   lockedNote: { fontSize:13, color:"#5b6b5b", background:"#f2f6f0", padding:"11px 12px", borderRadius:10, textAlign:"center" },
   pendingRoster: { marginTop:12, fontSize:13, color:"#92400e", background:"#fef3c7", padding:"10px 12px", borderRadius:8, textAlign:"center" },
   publishedTag: { marginTop:12, marginBottom:4, fontSize:12, fontWeight:700, color:"#166534" },

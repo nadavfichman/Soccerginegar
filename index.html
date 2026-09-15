@@ -667,7 +667,11 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
   return (
     <section style={S.gameCard}>
       <div style={S.gameHead}>
-        <div><div style={S.gameDay}>{dayName(game.kickoff)}</div><div style={S.gameTime}>{fmt(game.kickoff)}</div></div>
+        <div>
+          <div style={S.gameDay}>{dayName(game.kickoff)}</div>
+          <div style={S.gameTime}>{fmt(game.kickoff)}</div>
+          {isOpen && <div style={S.subLine}>{game.registrations.length} נרשמו עד כה</div>}
+        </div>
         <span className={isOpen?"pill open":"pill closed"}>{isOpen?"פתוח להרשמה":"סגור"}</span>
       </div>
       {!isOpen && <div style={S.opensRow}>ההרשמה נפתחת: <b>{fmt(game.opensAt)}</b> · עוד <b>{countdown(game.opensAt-now)}</b></div>}

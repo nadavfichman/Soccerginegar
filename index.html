@@ -426,7 +426,7 @@ function PlayerView({ roster, pending, games, session, identity, now, refresh, l
       </section>
       {nextToOpen && <CountdownBanner game={nextToOpen} now={now} />}
       {visible.length===0 && <div style={S.empty}>אין כרגע משחקים מפורסמים.</div>}
-      {visible.map(g => <GameCard key={g.id} game={g} roster={roster} me={me} now={now} refresh={refresh} attendanceCounts={attendanceCounts} bannerShown={!!nextToOpen && g.id===nextToOpen.id} />)}
+      {visible.map(g => <GameCard key={g.id} game={g} roster={roster} me={me} now={now} refresh={refresh} attendanceCounts={attendanceCounts} />)}
     </main>
   );
 }
@@ -619,7 +619,7 @@ function CountdownBanner({ game, now }) {
 }
 function CdUnit({val,label}){ return <div style={S.cdUnit}><div style={S.cdNum}>{val}</div><div style={S.cdLabel}>{label}</div></div>; }
 
-function GameCard({ game, roster, me, now, refresh, attendanceCounts, bannerShown }) {
+function GameCard({ game, roster, me, now, refresh, attendanceCounts }) {
   const isOpen = now >= game.opensAt;
   const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts})), roster, attendanceCounts);
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
@@ -666,12 +666,10 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts, bannerShow
 
   return (
     <section style={S.gameCard}>
-      {(isOpen || !bannerShown) && (
-        <div style={S.gameHead}>
-          <div><div style={S.gameDay}>{dayName(game.kickoff)}</div><div style={S.gameTime}>{fmtTime(game.kickoff)}</div></div>
-          {isOpen && <span className="pill open">פתוח להרשמה</span>}
-        </div>
-      )}
+      <div style={S.gameHead}>
+        <div><div style={S.gameDay}>{dayName(game.kickoff)}</div><div style={S.gameTime}>{fmtTime(game.kickoff)}</div></div>
+        {isOpen && <span className="pill open">פתוח להרשמה</span>}
+      </div>
       {isOpen && <div style={S.liveCountBar}>👥 {game.registrations.length} נרשמו עד כה למשחק</div>}
       {isOpen ? (
         myReg ? (

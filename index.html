@@ -682,6 +682,8 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts, hideHeader
         </div>
       )}
       {isOpen && <div style={S.liveCountBar}>👥 {game.registrations.length} נרשמו עד כה למשחק</div>}
+      {isOpen && !rosterPublished && game.registrations.length>0 &&
+        <LiveRegisteredNames regs={game.registrations} roster={roster} meId={me.id} />}
       {isOpen ? (
         myReg ? (
           <div style={S.regBox}>
@@ -715,6 +717,20 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts, hideHeader
         <PlayerRosterList main={main} wait={wait} roster={roster} meId={me.id} /></>
       ) : (myReg && <div style={S.pendingRoster}>רשימת המשתתפים במשחק תפורסם בקבוצת הוואטסאפ, בהתאם למגבלת כמות השחקנים במשחק.</div>)}
     </section>
+  );
+}
+
+// רשימת שמות "חיה" — מי שרשום עד כה כשההרשמה עדיין פתוחה ולפני פרסום
+// הרשימה הסופית. בכוונה בלי מיון עדיפות ובלי חלוקה לעיקרית/המתנה (זה
+// עוד לא נקבע) — רק סדר יציב לפי זמן הרשמה, כדי ששמות קיימים לא יזוזו
+// כשמצטרפים חדשים.
+function LiveRegisteredNames({ regs, roster, meId }) {
+  const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
+  const ordered = [...regs].sort((a,b)=>a.ts-b.ts);
+  return (
+    <ol style={S.ol}>
+      {ordered.map((r,i)=><li key={r.playerId} style={r.playerId===meId?S.liMe:S.li}><span style={S.num}>{i+1}</span><span style={S.pname}>{nameOf(r.playerId)}</span></li>)}
+    </ol>
   );
 }
 

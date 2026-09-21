@@ -416,7 +416,10 @@ function PlayerView({ roster, pending, games, session, identity, now, refresh, l
   const me = roster.find(p => p.id === identity.player_id);
   if (!me) return <div style={S.loading}>טוען…</div>;
 
-  const visible = games.filter(g => g.published !== false).sort((a,b)=>a.kickoff-b.kickoff);
+  // ברגע שהמשחק מתחיל (kickoff הגיע) הוא נעלם למשתמש — אחרת הוא ממשיך
+  // להופיע כאילו ההרשמה פתוחה (isOpen בודק רק שההרשמה נפתחה, בלי גבול
+  // עליון), גם למשחק שכבר הסתיים ונעל. ר' שיחה עם המשתמש.
+  const visible = games.filter(g => g.published !== false && now < g.kickoff).sort((a,b)=>a.kickoff-b.kickoff);
   const nextToOpen = visible.filter(g => now < g.opensAt).sort((a,b)=>a.opensAt-b.opensAt)[0];
   // הבאנר תמיד מוצג מעל הכרטיס הראשון ברשימה — אם המשחק הבא-להיפתח הוא גם
   // המשחק הראשון (אין משחק פתוח שמופיע לפניו), הבאנר צמוד ישירות לכרטיס

@@ -9,6 +9,12 @@
 -- מסמן אם שחקן הגיע בפועל למשחק (לא רק נרשם) — קובע עדיפות "מתמיד" בהרשמות עתידיות
 alter table registrations add column if not exists attended boolean default false;
 
+-- שם תצוגה לאורח חד-פעמי שהאדמין הוסיף ידנית למשחק ספציפי (ר' migrations/0008
+-- ו-admin_add_guest_registration). player_id של אורח הוא ערך סינתטי (guest_<uuid>)
+-- ולא מפנה לשורה אמיתית ב-players — guest_name הוא השם שמוצג במקומו בכל מקום
+-- שבו הקוד מציג שם על בסיס player_id.
+alter table registrations add column if not exists guest_name text;
+
 -- נועל את נתוני הנוכחות של משחק ספציפי: רק משחקים נעולים נספרים בעדיפות
 -- "מתמיד" (ר' get_my_identity/tierRank ב-index.html) — מאפשר לאדמין לערוך
 -- סימוני נוכחות בלי שזה משפיע על אף אחד, ורק לאחר נעילה זה "נצרב"

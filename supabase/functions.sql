@@ -256,6 +256,26 @@ begin
   return true;
 end; $$;
 
+-- אורח חד-פעמי למשחק ספציפי (ר' migrations/0008) — player_id סינתטי
+-- וייחודי (guest_<uuid>) מאוחסן בעמודת player_id הרגילה, כך ש-
+-- admin_remove_registration/admin_set_attendance/admin_set_registration_ts
+-- הקיימות (מעל) ממשיכות לעבוד עליו בלי שום שינוי.
+create or replace function admin_add_guest_registration(
+  input_game_id text, input_guest_name text,
+  input_pw text default null, input_phone text default null, input_pin text default null
+) returns text language plpgsql security definer as $$
+declare v_role text; v_name text; v_guest_id text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  v_name := trim(input_guest_name);
+  if v_name = '' then raise exception 'empty_guest_name'; end if;
+  v_guest_id := 'guest_' || replace(gen_random_uuid()::text, '-', '');
+  insert into registrations (game_id, player_id, guest_name, ts)
+    values (input_game_id, v_guest_id, v_name, (extract(epoch from now())*1000)::bigint);
+  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_add_guest_registration', jsonb_build_object('game_id', input_game_id, 'guest_name', v_name, 'player_id', v_guest_id));
+  return v_guest_id;
+end; $$;
+
 -- סימון נוכחות בפועל למשחק (אדמין או אדמין-על)
 create or replace function admin_set_attendance(
   input_game_id text, input_player_id text, input_attended boolean,

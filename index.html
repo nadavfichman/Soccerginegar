@@ -1315,10 +1315,18 @@ function PendingRequests({ pending, roster, refresh, cred }) {
 
 function AdminGames({ games, roster, now, refresh, cred, attendanceCounts }) {
   const [showNew,setShowNew]=useState(false);
+  const [showOld,setShowOld]=useState(false);
   const addGame = async (g) => {
     await callAdmin("admin_create_game", { input_kickoff: g.kickoff, input_opens_at: g.opensAt, input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
     setShowNew(false); await refresh();
   };
+  const sorted = [...games].sort((a,b)=>a.kickoff-b.kickoff);
+  // משחקים נעולים (נוכחות סופית, "היסטוריה") מתקפלים כברירת מחדל — לא
+  // נמחקים ולא נעלמים מה-DB (attendanceCounts ב-App עדיין תלוי בהם
+  // לעדיפות "מתמיד" של משחקים עתידיים), רק לא תופסים מקום במסך כברירת
+  // מחדל. ר' שיחה עם המשתמש.
+  const activeGames = sorted.filter(g => !g.attendanceLocked);
+  const oldGames = sorted.filter(g => g.attendanceLocked);
   return (
     <section style={S.card}>
       <div style={S.rowBetween}>
@@ -1326,9 +1334,19 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts }) {
         <button className="btn primary small" onClick={()=>setShowNew(v=>!v)}>{showNew?"בטל":"+ משחק"}</button>
       </div>
       {showNew && <NewGameForm onAdd={addGame} />}
-      {[...games].sort((a,b)=>a.kickoff-b.kickoff).map(g=>(
+      {activeGames.map(g=>(
         <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} />
       ))}
+      {oldGames.length>0 && (
+        <>
+          <button className="btn small" style={{marginTop:10,width:"100%"}} onClick={()=>setShowOld(v=>!v)}>
+            משחקים קודמים ונעולים ({oldGames.length}) {showOld?"▲":"▼"}
+          </button>
+          {showOld && oldGames.map(g=>(
+            <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} />
+          ))}
+        </>
+      )}
     </section>
   );
 }

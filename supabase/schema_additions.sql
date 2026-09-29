@@ -20,6 +20,19 @@ alter table registrations add column if not exists guest_name text;
 -- סימוני נוכחות בלי שזה משפיע על אף אחד, ורק לאחר נעילה זה "נצרב"
 alter table games add column if not exists attendance_locked boolean default false;
 
+-- קבוצת שחקן (ר' migrations/0009, admin_set_player_group): 'primary' (ברירת
+-- מחדל, כל שחקן קיים) או 'secondary'. קובעת אילו משחקים השחקן בכלל רואה —
+-- לא רק חסימת הרשמה (ר' visible_to_primary/visible_to_secondary למטה,
+-- ו-PlayerView.visible ב-index.html)
+alter table players add column if not exists player_group text not null default 'primary'
+  check (player_group in ('primary','secondary'));
+
+-- לכל משחק, אילו קבוצות שחקנים רואות אותו בכלל ברשימה שלהן. ברירת מחדל
+-- (primary=true, secondary=false) הופכת את התכונה ל-no-op עד שהאדמין בפועל
+-- מסמן את התיבה השנייה למשחק ספציפי
+alter table games add column if not exists visible_to_primary boolean not null default true;
+alter table games add column if not exists visible_to_secondary boolean not null default false;
+
 -- טבלה חדשה: לוג שגיאות קליינט (ר' log_client_error ב-functions.sql,
 -- ErrorBoundary/window.onerror/callAdmin ב-index.html). RLS מופעל בלי אף
 -- מדיניות — write-only דרך ה-RPC בלבד, לא ניתנת לקריאה מהדפדפן (כמו

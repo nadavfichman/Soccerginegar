@@ -288,6 +288,7 @@ function App() {
   const gamesWithRegs = games.map(g => ({
     id: g.id, kickoff: g.kickoff, opensAt: g.opens_at,
     published: g.published, rosterPublished: g.roster_published, attendanceLocked: !!g.attendance_locked,
+    visibleToPrimary: !!g.visible_to_primary, visibleToSecondary: !!g.visible_to_secondary,
     registrations: regs.filter(r => r.game_id === g.id).map(r => ({ playerId: r.player_id, ts: r.ts, attended: !!r.attended, guestName: r.guest_name || null })),
     declines: declines.filter(d => d.game_id === g.id).map(d => ({ playerId: d.player_id, ts: d.ts })),
   }));
@@ -419,7 +420,12 @@ function PlayerView({ roster, pending, games, session, identity, now, refresh, l
   // ברגע שהמשחק מתחיל (kickoff הגיע) הוא נעלם למשתמש — אחרת הוא ממשיך
   // להופיע כאילו ההרשמה פתוחה (isOpen בודק רק שההרשמה נפתחה, בלי גבול
   // עליון), גם למשחק שכבר הסתיים ונעל. ר' שיחה עם המשתמש.
-  const visible = games.filter(g => g.published !== false && now < g.kickoff).sort((a,b)=>a.kickoff-b.kickoff);
+  //
+  // משחק שלא מסומן לקבוצה של השחקן פשוט לא קיים מבחינתו — לא חסימת
+  // הרשמה, אלא הסתרה מלאה מהרשימה (כאילו לא נשלחה לו הזמנה בכלל).
+  const visible = games.filter(g => g.published !== false && now < g.kickoff &&
+    (me.player_group === "secondary" ? g.visibleToSecondary : g.visibleToPrimary)
+  ).sort((a,b)=>a.kickoff-b.kickoff);
   const nextToOpen = visible.filter(g => now < g.opensAt).sort((a,b)=>a.opensAt-b.opensAt)[0];
   // הבאנר תמיד מוצג מעל הכרטיס הראשון ברשימה — אם המשחק הבא-להיפתח הוא גם
   // המשחק הראשון (אין משחק פתוח שמופיע לפניו), הבאנר צמוד ישירות לכרטיס
@@ -1317,7 +1323,7 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts }) {
   const [showNew,setShowNew]=useState(false);
   const [showOld,setShowOld]=useState(false);
   const addGame = async (g) => {
-    await callAdmin("admin_create_game", { input_kickoff: g.kickoff, input_opens_at: g.opensAt, input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
+    await callAdmin("admin_create_game", { input_kickoff: g.kickoff, input_opens_at: g.opensAt, input_visible_to_primary: g.visiblePrimary, input_visible_to_secondary: g.visibleSecondary, input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
     setShowNew(false); await refresh();
   };
   const sorted = [...games].sort((a,b)=>a.kickoff-b.kickoff);
@@ -1353,6 +1359,7 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts }) {
 
 function NewGameForm({ onAdd }) {
   const [kickoff,setKickoff]=useState(""); const [opensAt,setOpensAt]=useState("");
+  const [visPrimary,setVisPrimary]=useState(true); const [visSecondary,setVisSecondary]=useState(false);
   useEffect(()=>{ if(kickoff&&!opensAt){ const d=new Date(kickoff); d.setDate(d.getDate()-2); setOpensAt(toLocalInput(d)); } },[kickoff]);
   return (
     <div style={S.formBox}>
@@ -1360,7 +1367,12 @@ function NewGameForm({ onAdd }) {
       <input style={S.input} type="datetime-local" value={kickoff} onChange={e=>setKickoff(e.target.value)} />
       <label style={S.labelSm}>פתיחת הרשמה</label>
       <input style={S.input} type="datetime-local" value={opensAt} onChange={e=>setOpensAt(e.target.value)} />
-      <button className="btn primary" style={{marginTop:8}} disabled={!kickoff||!opensAt} onClick={()=>onAdd({kickoff:new Date(kickoff).getTime(),opensAt:new Date(opensAt).getTime()})}>צור משחק (טיוטה)</button>
+      <label style={{...S.labelSm,marginTop:10}}>מי רואה את המשחק</label>
+      <div style={S.flagRow}>
+        <label style={S.flagLabel}><input type="checkbox" checked={visPrimary} onChange={e=>setVisPrimary(e.target.checked)} /> קבוצה ראשית</label>
+        <label style={S.flagLabel}><input type="checkbox" checked={visSecondary} onChange={e=>setVisSecondary(e.target.checked)} /> קבוצה משנית</label>
+      </div>
+      <button className="btn primary" style={{marginTop:8}} disabled={!kickoff||!opensAt} onClick={()=>onAdd({kickoff:new Date(kickoff).getTime(),opensAt:new Date(opensAt).getTime(),visiblePrimary:visPrimary,visibleSecondary:visSecondary})}>צור משחק (טיוטה)</button>
     </div>
   );
 }
@@ -1379,6 +1391,8 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
   const setGameField = async (patch) => {
     if ("published" in patch) await callAdmin("admin_set_game_published", { input_game_id: game.id, input_published: patch.published, ...credArgs });
     if ("roster_published" in patch) await callAdmin("admin_set_roster_published", { input_game_id: game.id, input_roster_published: patch.roster_published, ...credArgs });
+    if ("visible_to_primary" in patch) await callAdmin("admin_set_game_visible_primary", { input_game_id: game.id, input_value: patch.visible_to_primary, ...credArgs });
+    if ("visible_to_secondary" in patch) await callAdmin("admin_set_game_visible_secondary", { input_game_id: game.id, input_value: patch.visible_to_secondary, ...credArgs });
     await refresh();
   };
   const removeReg = async (pid, name) => {
@@ -1459,6 +1473,13 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
         <span style={S.pubText}>{game.rosterPublished?"✓ המשתתפים מפורסמים — השחקנים רואים את הרשימה":"רשימת המשתתפים מוסתרת — רק אתה רואה אותה"}</span>
         <button className={game.rosterPublished?"btn small":"btn primary small"} onClick={()=>setGameField({roster_published:!game.rosterPublished})}>{game.rosterPublished?"הסתר משתתפים":"פרסם משתתפים"}</button>
       </div>
+      <div style={{display:"flex",gap:6,alignItems:"center",marginTop:8}}>
+        <span style={S.subLine}>מי רואה:</span>
+        <span className={game.visibleToPrimary?"pill open":"pill closed"}>קבוצה ראשית</span>
+        <button className="btn small" onClick={()=>setGameField({visible_to_primary:!game.visibleToPrimary})}>{game.visibleToPrimary?"הסתר":"הצג"}</button>
+        <span className={game.visibleToSecondary?"pill open":"pill closed"}>קבוצה משנית</span>
+        <button className="btn small" onClick={()=>setGameField({visible_to_secondary:!game.visibleToSecondary})}>{game.visibleToSecondary?"הסתר":"הצג"}</button>
+      </div>
       <button className="btn waBtn" onClick={shareWa} disabled={main.length===0}>שלח רשימה לוואטסאפ</button>
       <button className="btn small" style={{marginTop:6,width:"100%"}} onClick={copyWaLog} disabled={main.length===0}>{copiedMsg || "📋 העתק רשימה בפורמט לוג וואטסאפ"}</button>
       <div style={S.addRow}>
@@ -1533,6 +1554,10 @@ function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
   const toggleFlag = async (id, field, val) => {
     const rpc = field === "is_ganigari" ? "admin_set_player_ganigari" : "admin_set_player_vatik";
     await callAdmin(rpc, { input_player_id: id, input_value: val, input_pw: cred.pw });
+    await refresh();
+  };
+  const setGroup = async (id, group) => {
+    await callAdmin("admin_set_player_group", { input_player_id: id, input_group: group, input_pw: cred.pw });
     await refresh();
   };
   const remove = async (id, name) => {
@@ -1661,6 +1686,10 @@ function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
               <div style={S.flagRow}>
                 <label style={S.flagLabel}><input type="checkbox" checked={!!p.is_ganigari} onChange={e=>toggleFlag(p.id,"is_ganigari",e.target.checked)} /> גניגרי</label>
                 <label style={S.flagLabel}><input type="checkbox" checked={!!p.is_vatik} onChange={e=>toggleFlag(p.id,"is_vatik",e.target.checked)} /> ותיק</label>
+                <select style={S.selectSm} value={p.player_group||"primary"} onChange={e=>setGroup(p.id,e.target.value)}>
+                  <option value="primary">קבוצה ראשית</option>
+                  <option value="secondary">קבוצה משנית</option>
+                </select>
               </div>
             </div>
           );

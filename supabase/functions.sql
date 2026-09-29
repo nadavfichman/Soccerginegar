@@ -143,6 +143,19 @@ begin
   return true;
 end; $$;
 
+-- שיוך קבוצה לשחקן (ר' migrations/0009) — קובע אילו משחקים בכלל מוצגים
+-- לו (ר' visible_to_primary/visible_to_secondary למעלה)
+create or replace function admin_set_player_group(input_player_id text, input_group text, input_pw text)
+returns boolean language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, null, null);
+  if v_role <> 'super' then raise exception 'not_authorized'; end if;
+  update players set player_group = input_group where id = input_player_id;
+  perform log_admin_action('super', 'super', 'admin_set_player_group', jsonb_build_object('player_id', input_player_id, 'group', input_group));
+  return true;
+end; $$;
+
 create or replace function admin_update_player_name(input_player_id text, input_name text, input_pw text)
 returns boolean language plpgsql security definer as $$
 declare v_role text;
@@ -178,15 +191,21 @@ begin
 end; $$;
 
 -- ניהול משחקים והרשמות (אדמין או אדמין-על)
-create or replace function admin_create_game(input_kickoff bigint, input_opens_at bigint, input_pw text, input_phone text, input_pin text)
-returns text language plpgsql security definer as $$
+-- visible_to_primary/visible_to_secondary נקבעים ביצירה (ר' migrations/0009) —
+-- קובעים אילו קבוצות שחקנים בכלל רואות את המשחק ברשימה שלהן.
+drop function if exists admin_create_game(bigint, bigint, text, text, text);
+create or replace function admin_create_game(
+  input_kickoff bigint, input_opens_at bigint,
+  input_visible_to_primary boolean, input_visible_to_secondary boolean,
+  input_pw text, input_phone text, input_pin text
+) returns text language plpgsql security definer as $$
 declare v_role text; v_game_id text;
 begin
   v_role := require_admin(input_pw, input_phone, input_pin);
   v_game_id := 'g'||floor(extract(epoch from now())*1000)::text;
-  insert into games (id, kickoff, opens_at, published, roster_published)
-    values (v_game_id, input_kickoff, input_opens_at, false, false);
-  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_create_game', jsonb_build_object('game_id', v_game_id, 'kickoff', input_kickoff, 'opens_at', input_opens_at));
+  insert into games (id, kickoff, opens_at, published, roster_published, visible_to_primary, visible_to_secondary)
+    values (v_game_id, input_kickoff, input_opens_at, false, false, input_visible_to_primary, input_visible_to_secondary);
+  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_create_game', jsonb_build_object('game_id', v_game_id, 'kickoff', input_kickoff, 'opens_at', input_opens_at, 'visible_to_primary', input_visible_to_primary, 'visible_to_secondary', input_visible_to_secondary));
   return 'ok';
 end; $$;
 
@@ -207,6 +226,26 @@ begin
   v_role := require_admin(input_pw, input_phone, input_pin);
   update games set roster_published = input_roster_published where id = input_game_id;
   perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_set_roster_published', jsonb_build_object('game_id', input_game_id, 'roster_published', input_roster_published));
+  return true;
+end; $$;
+
+create or replace function admin_set_game_visible_primary(input_game_id text, input_value boolean, input_pw text, input_phone text, input_pin text)
+returns boolean language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  update games set visible_to_primary = input_value where id = input_game_id;
+  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_set_game_visible_primary', jsonb_build_object('game_id', input_game_id, 'value', input_value));
+  return true;
+end; $$;
+
+create or replace function admin_set_game_visible_secondary(input_game_id text, input_value boolean, input_pw text, input_phone text, input_pin text)
+returns boolean language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  update games set visible_to_secondary = input_value where id = input_game_id;
+  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_set_game_visible_secondary', jsonb_build_object('game_id', input_game_id, 'value', input_value));
   return true;
 end; $$;
 

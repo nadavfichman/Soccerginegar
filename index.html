@@ -1246,10 +1246,10 @@ function PendingRequests({ pending, roster, refresh, cred }) {
   // אחרי אישור/דחייה — מציע לשלוח לשחקן הודעת וואטסאפ מוכנה, בלחיצה אחת
   const [justDecided,setJustDecided] = useState(null); // { req, decision: 'approved'|'rejected' }
 
-  const approve = async (req, isGanigari, isVatik) => {
+  const approve = async (req, isGanigari, isVatik, group) => {
     const dupErr = findDuplicate(req.name, req.phone, req.email, roster, pending, req.id);
     if (dupErr) { window.alert("לא ניתן לאשר — " + dupErr + " בדוק אם זה אותו שחקן שנרשם בטעות פעם נוספת."); return; }
-    const { data, error } = await db.rpc("approve_player_request", { input_request_id: req.id, input_is_ganigari: isGanigari, input_is_vatik: isVatik, input_pw: cred.pw });
+    const { data, error } = await db.rpc("approve_player_request", { input_request_id: req.id, input_is_ganigari: isGanigari, input_is_vatik: isVatik, input_group: group, input_pw: cred.pw });
     if (error) { window.alert("שגיאה באישור — נסה להתחבר שוב."); return; }
     if (data === "phone_taken") { window.alert("מספר הטלפון הזה כבר קיים במערכת."); return; }
     setJustDecided({ req, decision: "approved" });
@@ -1288,16 +1288,7 @@ function PendingRequests({ pending, roster, refresh, cred }) {
         <h2 style={S.h2}>בקשות ממתינות {pendingList.length>0 && <span className="badgeCount">{pendingList.length}</span>}</h2>
         {pendingList.length===0 && <p style={S.hint}>אין בקשות חדשות.</p>}
         {pendingList.map(req=>(
-          <div key={req.id} style={S.pendRow}>
-            <div><div style={S.pname}>{req.name}</div><div style={S.subLine}>{req.phone}</div></div>
-            <div style={S.pendActions}>
-              <button className="btn small" onClick={()=>approve(req,false,false)}>אשר · רגיל</button>
-              <button className="btn small ok" onClick={()=>approve(req,false,true)}>ותיק</button>
-              <button className="btn small ok" onClick={()=>approve(req,true,false)}>גניגרי</button>
-              <button className="btn small ok" onClick={()=>approve(req,true,true)}>גניגרי+ותיק</button>
-              <button className="btn danger small" onClick={()=>reject(req)}>דחה</button>
-            </div>
-          </div>
+          <PendingRequestRow key={req.id} req={req} onApprove={approve} onReject={reject} />
         ))}
       </section>
 
@@ -1316,6 +1307,32 @@ function PendingRequests({ pending, roster, refresh, cred }) {
         ))}
       </section>
     </>
+  );
+}
+
+// שורת בקשה ממתינה — דגלי גניגרי/ותיק + קבוצה נבחרים לפני אישור, במקום
+// מטריצת כפתורים קבועה (הוספת קבוצה כממד שלישי הייתה הופכת אותה ל-8
+// כפתורים). ברירת המחדל 'primary' תואמת את ברירת המחדל של העמודה עצמה.
+function PendingRequestRow({ req, onApprove, onReject }) {
+  const [isGanigari,setIsGanigari]=useState(false);
+  const [isVatik,setIsVatik]=useState(false);
+  const [group,setGroup]=useState("primary");
+  return (
+    <div style={S.pendRow}>
+      <div><div style={S.pname}>{req.name}</div><div style={S.subLine}>{req.phone}</div></div>
+      <div style={S.flagRow}>
+        <label style={S.flagLabel}><input type="checkbox" checked={isGanigari} onChange={e=>setIsGanigari(e.target.checked)} /> גניגרי</label>
+        <label style={S.flagLabel}><input type="checkbox" checked={isVatik} onChange={e=>setIsVatik(e.target.checked)} /> ותיק</label>
+        <select style={S.selectSm} value={group} onChange={e=>setGroup(e.target.value)}>
+          <option value="primary">קבוצה ראשית</option>
+          <option value="secondary">קבוצה משנית</option>
+        </select>
+      </div>
+      <div style={S.pendActions}>
+        <button className="btn small ok" onClick={()=>onApprove(req,isGanigari,isVatik,group)}>אשר</button>
+        <button className="btn danger small" onClick={()=>onReject(req)}>דחה</button>
+      </div>
+    </div>
   );
 }
 
@@ -1537,6 +1554,7 @@ function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
   const [search,setSearch]=useState("");
   const [name,setName]=useState(""); const [phone,setPhone]=useState("");
   const [newGanigari,setNewGanigari]=useState(false); const [newVatik,setNewVatik]=useState(false);
+  const [newGroup,setNewGroup]=useState("primary");
   const [err,setErr]=useState("");
 
   const add = async () => {
@@ -1547,9 +1565,9 @@ function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
     if (roster.some(r=>r.phone===p)) { setErr("מספר קיים כבר ברשימה"); return; }
     const nn = normName(name);
     if (roster.some(r=>normName(r.name)===nn)) { setErr("שם זה כבר קיים ברשימה"); return; }
-    const data = await callAdmin("admin_add_player", { input_name: name.trim(), input_phone: p, input_is_ganigari: newGanigari, input_is_vatik: newVatik, input_pw: cred.pw });
+    const data = await callAdmin("admin_add_player", { input_name: name.trim(), input_phone: p, input_is_ganigari: newGanigari, input_is_vatik: newVatik, input_group: newGroup, input_pw: cred.pw });
     if (data === "phone_taken") { setErr("מספר קיים כבר ברשימה"); return; }
-    setName(""); setPhone(""); setNewGanigari(false); setNewVatik(false); await refresh();
+    setName(""); setPhone(""); setNewGanigari(false); setNewVatik(false); setNewGroup("primary"); await refresh();
   };
   const toggleFlag = async (id, field, val) => {
     const rpc = field === "is_ganigari" ? "admin_set_player_ganigari" : "admin_set_player_vatik";
@@ -1650,6 +1668,10 @@ function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
         <div style={S.flagRow}>
           <label style={S.flagLabel}><input type="checkbox" checked={newGanigari} onChange={e=>setNewGanigari(e.target.checked)} /> גניגרי</label>
           <label style={S.flagLabel}><input type="checkbox" checked={newVatik} onChange={e=>setNewVatik(e.target.checked)} /> ותיק</label>
+          <select style={S.selectSm} value={newGroup} onChange={e=>setNewGroup(e.target.value)}>
+            <option value="primary">קבוצה ראשית</option>
+            <option value="secondary">קבוצה משנית</option>
+          </select>
           <button className="btn primary small" onClick={add}>הוסף</button>
         </div>
         {err && <p style={S.errText}>{err}</p>}

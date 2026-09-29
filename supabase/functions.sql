@@ -43,8 +43,10 @@ end; $$;
 revoke all on function log_admin_action(text,text,text,jsonb) from public;
 
 -- אישור/דחייה/שקילה מחדש של בקשות הצטרפות (אדמין-על בלבד)
+-- input_group נבחר בטופס האישור עצמו (ר' PendingRequestRow, migrations/0009)
+drop function if exists approve_player_request(text, boolean, boolean, text);
 create or replace function approve_player_request(
-  input_request_id text, input_is_ganigari boolean, input_is_vatik boolean, input_pw text
+  input_request_id text, input_is_ganigari boolean, input_is_vatik boolean, input_group text, input_pw text
 ) returns text language plpgsql security definer as $$
 declare v_role text; r record;
 begin
@@ -53,10 +55,10 @@ begin
   select * into r from player_requests where id = input_request_id;
   if r is null then return 'not_found'; end if;
   if exists (select 1 from players where phone = r.phone) then return 'phone_taken'; end if;
-  insert into players (id, name, phone, is_ganigari, is_vatik, email, auth_user_id)
-    values ('p'||floor(extract(epoch from now())*1000)::text, r.name, r.phone, input_is_ganigari, input_is_vatik, r.email, r.auth_user_id);
+  insert into players (id, name, phone, is_ganigari, is_vatik, player_group, email, auth_user_id)
+    values ('p'||floor(extract(epoch from now())*1000)::text, r.name, r.phone, input_is_ganigari, input_is_vatik, coalesce(input_group,'primary'), r.email, r.auth_user_id);
   delete from player_requests where id = input_request_id;
-  perform log_admin_action('super', 'super', 'approve_player_request', jsonb_build_object('request_id', input_request_id, 'name', r.name, 'phone', r.phone, 'is_ganigari', input_is_ganigari, 'is_vatik', input_is_vatik));
+  perform log_admin_action('super', 'super', 'approve_player_request', jsonb_build_object('request_id', input_request_id, 'name', r.name, 'phone', r.phone, 'is_ganigari', input_is_ganigari, 'is_vatik', input_is_vatik, 'group', input_group));
   return 'ok';
 end; $$;
 
@@ -95,16 +97,18 @@ begin
 end; $$;
 
 -- ניהול שחקנים ידני ברשימה המאושרת (אדמין-על בלבד)
-create or replace function admin_add_player(input_name text, input_phone text, input_is_ganigari boolean, input_is_vatik boolean, input_pw text)
+-- input_group נבחר בטופס ההוספה עצמו (ר' AdminRoster, migrations/0009)
+drop function if exists admin_add_player(text, text, boolean, boolean, text);
+create or replace function admin_add_player(input_name text, input_phone text, input_is_ganigari boolean, input_is_vatik boolean, input_group text, input_pw text)
 returns text language plpgsql security definer as $$
 declare v_role text;
 begin
   v_role := require_admin(input_pw, null, null);
   if v_role <> 'super' then raise exception 'not_authorized'; end if;
   if exists (select 1 from players where phone = input_phone) then return 'phone_taken'; end if;
-  insert into players (id, name, phone, is_ganigari, is_vatik)
-    values ('p'||floor(extract(epoch from now())*1000)::text, input_name, input_phone, input_is_ganigari, input_is_vatik);
-  perform log_admin_action('super', 'super', 'admin_add_player', jsonb_build_object('name', input_name, 'phone', input_phone, 'is_ganigari', input_is_ganigari, 'is_vatik', input_is_vatik));
+  insert into players (id, name, phone, is_ganigari, is_vatik, player_group)
+    values ('p'||floor(extract(epoch from now())*1000)::text, input_name, input_phone, input_is_ganigari, input_is_vatik, coalesce(input_group,'primary'));
+  perform log_admin_action('super', 'super', 'admin_add_player', jsonb_build_object('name', input_name, 'phone', input_phone, 'is_ganigari', input_is_ganigari, 'is_vatik', input_is_vatik, 'group', input_group));
   return 'ok';
 end; $$;
 

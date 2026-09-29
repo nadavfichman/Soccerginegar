@@ -12,11 +12,10 @@
 -- כבר 'primary', כל משחק קיים ממשיך גלוי לקבוצה הראשית בלבד — עד שהאדמין
 -- בפועל משייך מישהו ל"משנית" או מסמן את התיבה השנייה במשחק חדש.
 --
--- שיוך קבוצה לשחקן חדש (בהוספה ידנית או באישור בקשה) נשאר בברירת המחדל
--- 'primary' במכוון — לא נוסף שדה קבוצה לטפסי admin_add_player/
--- approve_player_request, כדי לא לפרק את מטריצת 4 כפתורי האישור הקיימת
--- (גניגרי×ותיק) ל-8. האדמין משייך ל"משנית" אחרי ההוספה, מתוך רשימת
--- השחקנים המאושרים — בדיוק כמו is_vatik/is_ganigari.
+-- שיוך קבוצה ניתן לעריכה בכל מצב — גם בהקמת שחקן (הוספה ידנית או אישור
+-- בקשה, ר' AdminRoster/PendingRequestRow) וגם אחר כך (בורר קבוצה ברשימת
+-- השחקנים המאושרים). כל שחקן חייב להיות משויך לקבוצה כלשהי — האילוץ
+-- (NOT NULL + CHECK) אוכף את זה ברמת הטבלה, לא רק ב-UI.
 -- ============================================================================
 
 alter table players add column if not exists player_group text not null default 'primary'
@@ -61,7 +60,7 @@ begin
   return true;
 end; $$;
 
--- שיוך קבוצה לשחקן (אדמין-על בלבד, כמו admin_set_player_ganigari/vatik)
+-- שיוך קבוצה לשחקן קיים (אדמין-על בלבד, כמו admin_set_player_ganigari/vatik)
 create or replace function admin_set_player_group(input_player_id text, input_group text, input_pw text)
 returns boolean language plpgsql security definer as $$
 declare v_role text;
@@ -71,4 +70,38 @@ begin
   update players set player_group = input_group where id = input_player_id;
   perform log_admin_action('super', 'super', 'admin_set_player_group', jsonb_build_object('player_id', input_player_id, 'group', input_group));
   return true;
+end; $$;
+
+-- שיוך קבוצה בעת הוספה ידנית (ר' AdminRoster)
+drop function if exists admin_add_player(text, text, boolean, boolean, text);
+create or replace function admin_add_player(input_name text, input_phone text, input_is_ganigari boolean, input_is_vatik boolean, input_group text, input_pw text)
+returns text language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, null, null);
+  if v_role <> 'super' then raise exception 'not_authorized'; end if;
+  if exists (select 1 from players where phone = input_phone) then return 'phone_taken'; end if;
+  insert into players (id, name, phone, is_ganigari, is_vatik, player_group)
+    values ('p'||floor(extract(epoch from now())*1000)::text, input_name, input_phone, input_is_ganigari, input_is_vatik, coalesce(input_group,'primary'));
+  perform log_admin_action('super', 'super', 'admin_add_player', jsonb_build_object('name', input_name, 'phone', input_phone, 'is_ganigari', input_is_ganigari, 'is_vatik', input_is_vatik, 'group', input_group));
+  return 'ok';
+end; $$;
+
+-- שיוך קבוצה בעת אישור בקשת הצטרפות (ר' PendingRequestRow)
+drop function if exists approve_player_request(text, boolean, boolean, text);
+create or replace function approve_player_request(
+  input_request_id text, input_is_ganigari boolean, input_is_vatik boolean, input_group text, input_pw text
+) returns text language plpgsql security definer as $$
+declare v_role text; r record;
+begin
+  v_role := require_admin(input_pw, null, null);
+  if v_role <> 'super' then raise exception 'not_authorized'; end if;
+  select * into r from player_requests where id = input_request_id;
+  if r is null then return 'not_found'; end if;
+  if exists (select 1 from players where phone = r.phone) then return 'phone_taken'; end if;
+  insert into players (id, name, phone, is_ganigari, is_vatik, player_group, email, auth_user_id)
+    values ('p'||floor(extract(epoch from now())*1000)::text, r.name, r.phone, input_is_ganigari, input_is_vatik, coalesce(input_group,'primary'), r.email, r.auth_user_id);
+  delete from player_requests where id = input_request_id;
+  perform log_admin_action('super', 'super', 'approve_player_request', jsonb_build_object('request_id', input_request_id, 'name', r.name, 'phone', r.phone, 'is_ganigari', input_is_ganigari, 'is_vatik', input_is_vatik, 'group', input_group));
+  return 'ok';
 end; $$;

@@ -4,10 +4,17 @@ on:
   push:
     branches: [main, "claude/**"]
   workflow_dispatch: {}
+  # מוניטור יומי אמיתי ל-production-canary (לא רק בדיקת regression על
+  # push) — אם Vercel/הדומיין ייפלו באופן עצמאי בלי שום שינוי קוד, זה
+  # ייתפס תוך 24 שעות במקום לחכות ל-push הבא. ה-job smoke לא רץ בטריגר
+  # הזה (ר' ה-if שלו למטה) כדי לא לבזבז דקות CI מיותרות על e2e מלא כל יום.
+  schedule:
+    - cron: "0 6 * * *"
 
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v4
 
@@ -43,11 +50,13 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
-  # רץ רק אחרי מיזוג ל-main (אז ל-Vercel יש מה לפרוס) — מוודא שה-APP_URL
-  # שמוטבע בפועל בקוד (הקישור שנשלח לשחקנים בהודעות וואטסאפ) באמת עולה
-  # ומגיש את האפליקציה האמיתית. זה בדיוק מה שהיה תופס אוטומטית את הפעמים
-  # שה-APP_URL הצביע לכתובת שגויה (ר' CLAUDE.md "באגים משמעותיים" #5),
-  # בלי לחכות ששחקן ילחץ על קישור שבור וידווח.
+  # רץ אחרי כל מיזוג ל-main (אז ל-Vercel יש מה לפרוס) וגם על לוח זמנים
+  # יומי (ר' schedule למעלה) — מוודא שה-APP_URL שמוטבע בפועל בקוד (הקישור
+  # שנשלח לשחקנים בהודעות וואטסאפ) באמת עולה ומגיש את האפליקציה האמיתית.
+  # זה בדיוק מה שהיה תופס אוטומטית את הפעמים שה-APP_URL הצביע לכתובת
+  # שגויה (ר' CLAUDE.md "באגים משמעותיים" #5), בלי לחכות ששחקן ילחץ על
+  # קישור שבור וידווח — והטריגר היומי תופס גם תקלה שקרתה בלי שום push
+  # (למשל Vercel/הדומיין נפלו מסיבות שלהם).
   production-canary:
     name: Verify production APP_URL is live
     runs-on: ubuntu-latest

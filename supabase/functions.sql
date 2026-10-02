@@ -255,12 +255,19 @@ end; $$;
 
 -- עריכת שעת/תאריך משחק אחרי פרסום (ר' migrations/0010) — כל התצוגות
 -- לשחקנים קוראות ישירות מ-games.kickoff, אז השינוי מתעדכן בכל מקום
--- אוטומטית בלי צורך לעדכן עותקים נפרדים
+-- אוטומטית בלי צורך לעדכן עותקים נפרדים. אימות בצד השרת נוסף ב-
+-- migrations/0011 — ה-UI חוסם עריכה למשחק שכבר קרה, אבל זו הייתה בדיקת
+-- לקוח בלבד; קריאה ישירה ל-RPC יכלה לעקוף אותה או להזיז קיקאוף לפני
+-- opens_at.
 create or replace function admin_set_game_kickoff(input_game_id text, input_kickoff bigint, input_pw text, input_phone text, input_pin text)
 returns boolean language plpgsql security definer as $$
-declare v_role text;
+declare v_role text; v_old_kickoff bigint; v_opens_at bigint;
 begin
   v_role := require_admin(input_pw, input_phone, input_pin);
+  select kickoff, opens_at into v_old_kickoff, v_opens_at from games where id = input_game_id;
+  if v_old_kickoff is null then raise exception 'game_not_found'; end if;
+  if v_old_kickoff < floor(extract(epoch from now())*1000) then raise exception 'game_already_happened'; end if;
+  if input_kickoff <= v_opens_at then raise exception 'kickoff_before_opens'; end if;
   update games set kickoff = input_kickoff where id = input_game_id;
   perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_set_game_kickoff', jsonb_build_object('game_id', input_game_id, 'kickoff', input_kickoff));
   return true;

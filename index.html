@@ -1482,7 +1482,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
 
   // הודעת "נפתחה ההרשמה" לקבוצת הוואטסאפ של הקבוצה הראשית — אותו דפוס
   // בדיוק כמו shareWa (wa.me בלי מספר, האדמין בוחר יעד ולוחץ שלח בעצמו)
-  const buildOpenMsg = () => "שלום, נפתחה ההרשמה למשחק ב"+dayName(game.kickoff)+" בשעה "+fmtTime(game.kickoff)+" במגרש גילעד!\nיש לאשר הגעה באפליקציה: "+APP_URL;
+  const buildOpenMsg = () => "⚽ נפתחה ההרשמה למשחק! ב"+dayName(game.kickoff)+" בשעה "+fmtTime(game.kickoff)+", במגרש גילעד 🔥\nיש לאשר הגעה באפליקציה: "+APP_URL;
   const shareOpenMsg = () => window.open("https://wa.me/?text="+encodeURIComponent(buildOpenMsg()), "_blank");
 
   // לקבוצה המשנית (כמה חברים בודדים, בלי קבוצת וואטסאפ משלהם) אין יעד

@@ -42,3 +42,41 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  # רץ רק אחרי מיזוג ל-main (אז ל-Vercel יש מה לפרוס) — מוודא שה-APP_URL
+  # שמוטבע בפועל בקוד (הקישור שנשלח לשחקנים בהודעות וואטסאפ) באמת עולה
+  # ומגיש את האפליקציה האמיתית. זה בדיוק מה שהיה תופס אוטומטית את הפעמים
+  # שה-APP_URL הצביע לכתובת שגויה (ר' CLAUDE.md "באגים משמעותיים" #5),
+  # בלי לחכות ששחקן ילחץ על קישור שבור וידווח.
+  production-canary:
+    name: Verify production APP_URL is live
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract APP_URL from index.html
+        id: appurl
+        run: |
+          URL=$(grep -oP 'const APP_URL = "\K[^"]+' index.html)
+          if [ -z "$URL" ]; then
+            echo "לא נמצא APP_URL ב-index.html"
+            exit 1
+          fi
+          echo "בודק: $URL"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Vercel deploy and verify the real app is served
+        run: |
+          URL="${{ steps.appurl.outputs.url }}"
+          for i in $(seq 1 10); do
+            STATUS=$(curl -sL -o /tmp/body.html -w "%{http_code}" "$URL" || echo "000")
+            if [ "$STATUS" = "200" ] && grep -q "כדורגל גניגרי ושות" /tmp/body.html; then
+              echo "תקין: $URL עובד ומגיש את האפליקציה (ניסיון $i)"
+              exit 0
+            fi
+            echo "ניסיון $i: סטטוס $STATUS, מנסה שוב בעוד 15 שניות..."
+            sleep 15
+          done
+          echo "כשל: $URL לא הגיש את האפליקציה האמיתית אחרי כל הניסיונות (סטטוס אחרון: $STATUS)"
+          exit 1

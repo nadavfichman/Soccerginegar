@@ -43,6 +43,31 @@ try {
   fail("manifest.json לא תקין: " + e.message);
 }
 
+// 6. אין "select * from (" בתוך SQL — זה בדיוק הדפוס שגרם לבאג get_my_identity
+// (ר' CLAUDE.md "באגים משמעותיים" #1): select * מתוך תת-שאילתה עלול לכלול
+// עמודות פנימיות (כמו עמודת מיון) שלא חלק מהחתימה המוצהרת של הפונקציה,
+// וגורם לשגיאת 42804 בכל קריאה — כישלון שקט שתקוע מאחורי מסכי "לא מזוהה".
+try {
+  const sqlFiles = [
+    "supabase/functions.sql",
+    ...fs.readdirSync("supabase/migrations").map(f => "supabase/migrations/" + f),
+  ];
+  const offenders = [];
+  for (const file of sqlFiles) {
+    // מסיר הערות SQL (-- עד סוף שורה) לפני הבדיקה, כדי לא להיתפס על אזכור
+    // תיעודי של הדפוס (למשל בהערה שמסבירה את הבאג ההיסטורי) כאילו הוא קוד.
+    const sqlNoComments = fs.readFileSync(file, "utf8").replace(/--.*$/gm, "");
+    if (/select\s*\*\s*from\s*\(/i.test(sqlNoComments)) offenders.push(file);
+  }
+  if (offenders.length > 0) {
+    fail("נמצא 'select * from (' מסוכן (עלול לחשוף עמודות פנימיות מעבר לחתימה המוצהרת): " + offenders.join(", "));
+  } else {
+    ok("אין דפוס 'select * from (' מסוכן בקבצי ה-SQL");
+  }
+} catch (e) {
+  fail("בדיקת select * from ( נכשלה: " + e.message);
+}
+
 if (failed) {
   console.error("\nכשל בבדיקות CHECKLIST.md האוטומטיות — ר' CHECKLIST.md לפרטים.");
   process.exit(1);

@@ -1493,7 +1493,22 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
   // עם אותו שחקן, והאדמין לוחץ "שלח" פעם אחת לכל שם. אין דרך לשלוח את כולם
   // בלחיצה אחת אמיתית בלי WhatsApp Business API בתשלום.
   const secondaryMembers = roster.filter(p => p.player_group==="secondary" && p.phone);
-  const sendOpenMsgTo = (phone) => window.open("https://wa.me/972"+phone.replace(/^0/,"")+"?text="+encodeURIComponent(buildOpenMsg()), "_blank");
+  // סימון "נשלח" לכל שחקן, לפי משחק — כדי שלא ישלחו בטעות הודעה כפולה
+  // לאותו אדם (למשל לחיצה כפולה, או חזרה לרשימה אחרי כמה דקות ושכחה
+  // שכבר נשלח). ב-localStorage כי זה רק תזכורת UI, לא נתון עסקי שצריך
+  // לשרוד בין מכשירים — כל אדמין רואה את מה שהוא עצמו כבר שלח במכשיר הזה.
+  const sentKey = (pid) => "waSent_"+game.id+"_"+pid;
+  const [sentIds,setSentIds] = useState(() => {
+    const s = new Set();
+    try { secondaryMembers.forEach(p => { if (localStorage.getItem(sentKey(p.id))) s.add(p.id); }); } catch {}
+    return s;
+  });
+  const sendOpenMsgTo = (p) => {
+    if (sentIds.has(p.id) && !window.confirm("כבר נשלחה הודעה ל"+p.name+" למשחק הזה. לשלוח שוב?")) return;
+    window.open("https://wa.me/972"+p.phone.replace(/^0/,"")+"?text="+encodeURIComponent(buildOpenMsg()), "_blank");
+    try { localStorage.setItem(sentKey(p.id), "1"); } catch {}
+    setSentIds(prev => new Set(prev).add(p.id));
+  };
 
   // פורמט של לוג צ'אט וואטסאפ ([D/M, HH:MM] שם: מגיע) — לא לשליחה, אלא להעתקה
   // כדי שאפליקציה חיצונית אחרת שמזהה נוכחות לפי הפורמט הזה תוכל לקלוט את הרשימה
@@ -1550,7 +1565,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
             <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:6}}>
               {secondaryMembers.length===0 && <span style={S.subLine}>אין שחקנים בקבוצה המשנית עם מספר טלפון</span>}
               {secondaryMembers.map(p=>(
-                <button key={p.id} className="btn small" style={{width:"100%",textAlign:"right"}} onClick={()=>sendOpenMsgTo(p.phone)}>שלח ל{p.name} ({p.phone})</button>
+                <button key={p.id} className="btn small" style={{width:"100%",textAlign:"right",opacity:sentIds.has(p.id)?0.6:1}} onClick={()=>sendOpenMsgTo(p)}>{sentIds.has(p.id)?"✓ נשלח ל":"שלח ל"}{p.name} ({p.phone})</button>
               ))}
             </div>
           )}

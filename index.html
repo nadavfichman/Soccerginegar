@@ -1408,6 +1408,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
   const [copiedMsg,setCopiedMsg]=useState("");
   const [editingKickoff,setEditingKickoff]=useState(false);
   const [newKickoff,setNewKickoff]=useState("");
+  const [showSecondarySend,setShowSecondarySend]=useState(false);
   const isOpen = now >= game.opensAt;
   const hasHappened = now >= game.kickoff;
   const credArgs = { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null };
@@ -1481,8 +1482,18 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
 
   // הודעת "נפתחה ההרשמה" לקבוצת הוואטסאפ של הקבוצה הראשית — אותו דפוס
   // בדיוק כמו shareWa (wa.me בלי מספר, האדמין בוחר יעד ולוחץ שלח בעצמו)
-  const buildOpenMsg = () => "שלום, נפתחה ההרשמה למשחק ב"+dayName(game.kickoff)+" בשעה "+fmtTime(game.kickoff)+"!\nיש לאשר הגעה באפליקציה: "+APP_URL;
+  const buildOpenMsg = () => "שלום, נפתחה ההרשמה למשחק ב"+dayName(game.kickoff)+" בשעה "+fmtTime(game.kickoff)+" במגרש גילעד!\nיש לאשר הגעה באפליקציה: "+APP_URL;
   const shareOpenMsg = () => window.open("https://wa.me/?text="+encodeURIComponent(buildOpenMsg()), "_blank");
+
+  // לקבוצה המשנית (כמה חברים בודדים, בלי קבוצת וואטסאפ משלהם) אין יעד
+  // משותף אחד לשלוח אליו — wa.me בלי מספר תמיד פותח בורר "כל אנשי הקשר",
+  // לא רשימה מסוננת. הפתרון בפועל: כפתור שליחה נפרד לכל שחקן בקבוצה
+  // המשנית, לפי הדפוס הקיים באפליקציה לשליחה לטלפון ספציפי (ר' shareWa
+  // ב-AdminInvites/AdminPinResets) — כל כפתור פותח צ'אט וואטסאפ מוכן מראש
+  // עם אותו שחקן, והאדמין לוחץ "שלח" פעם אחת לכל שם. אין דרך לשלוח את כולם
+  // בלחיצה אחת אמיתית בלי WhatsApp Business API בתשלום.
+  const secondaryMembers = roster.filter(p => p.player_group==="secondary" && p.phone);
+  const sendOpenMsgTo = (phone) => window.open("https://wa.me/972"+phone.replace(/^0/,"")+"?text="+encodeURIComponent(buildOpenMsg()), "_blank");
 
   // פורמט של לוג צ'אט וואטסאפ ([D/M, HH:MM] שם: מגיע) — לא לשליחה, אלא להעתקה
   // כדי שאפליקציה חיצונית אחרת שמזהה נוכחות לפי הפורמט הזה תוכל לקלוט את הרשימה
@@ -1531,6 +1542,19 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
       </div>
       {game.visibleToPrimary && (
         <button className="btn waBtn" onClick={shareOpenMsg}>📢 הודעת פתיחת הרשמה (קבוצה ראשית)</button>
+      )}
+      {game.visibleToSecondary && (
+        <div>
+          <button className="btn waBtn" style={{width:"100%"}} onClick={()=>setShowSecondarySend(s=>!s)}>📢 הודעת פתיחת הרשמה (קבוצה משנית) {showSecondarySend?"▲":"▼"}</button>
+          {showSecondarySend && (
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:6}}>
+              {secondaryMembers.length===0 && <span style={S.subLine}>אין שחקנים בקבוצה המשנית עם מספר טלפון</span>}
+              {secondaryMembers.map(p=>(
+                <button key={p.id} className="btn small" style={{width:"100%",textAlign:"right"}} onClick={()=>sendOpenMsgTo(p.phone)}>שלח ל{p.name} ({p.phone})</button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
       <button className="btn waBtn" onClick={shareWa} disabled={main.length===0}>שלח רשימה לוואטסאפ</button>
       <button className="btn small" style={{marginTop:6,width:"100%"}} onClick={copyWaLog} disabled={main.length===0}>{copiedMsg || "📋 העתק רשימה בפורמט לוג וואטסאפ"}</button>

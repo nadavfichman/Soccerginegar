@@ -54,6 +54,7 @@
 const { useState, useEffect, useRef } = React;
 
 // ==== חיבור ל-Supabase ====
+const APP_URL = "https://nadavfichman.github.io/Soccerginegar/";
 const SUPABASE_URL = "https://unjlkvszqdigyfxwnmot.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Az_gUJnuPo61SJ9VTq8VTg_vHPWNk1y";
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -1461,6 +1462,11 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
   };
   const shareWa = () => window.open("https://wa.me/?text="+encodeURIComponent(buildWa()), "_blank");
 
+  // הודעת "נפתחה ההרשמה" לקבוצת הוואטסאפ של הקבוצה הראשית — אותו דפוס
+  // בדיוק כמו shareWa (wa.me בלי מספר, האדמין בוחר יעד ולוחץ שלח בעצמו)
+  const buildOpenMsg = () => "שלום, נפתחה ההרשמה למשחק ב"+dayName(game.kickoff)+" בשעה "+fmtTime(game.kickoff)+"!\nיש לאשר הגעה באפליקציה: "+APP_URL;
+  const shareOpenMsg = () => window.open("https://wa.me/?text="+encodeURIComponent(buildOpenMsg()), "_blank");
+
   // פורמט של לוג צ'אט וואטסאפ ([D/M, HH:MM] שם: מגיע) — לא לשליחה, אלא להעתקה
   // כדי שאפליקציה חיצונית אחרת שמזהה נוכחות לפי הפורמט הזה תוכל לקלוט את הרשימה
   const buildWaLog = () => main.map(r => {
@@ -1497,6 +1503,9 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
         <span className={game.visibleToSecondary?"pill open":"pill closed"}>קבוצה משנית</span>
         <button className="btn small" onClick={()=>setGameField({visible_to_secondary:!game.visibleToSecondary})}>{game.visibleToSecondary?"הסתר":"הצג"}</button>
       </div>
+      {game.visibleToPrimary && (
+        <button className="btn waBtn" onClick={shareOpenMsg}>📢 הודעת פתיחת הרשמה (קבוצה ראשית)</button>
+      )}
       <button className="btn waBtn" onClick={shareWa} disabled={main.length===0}>שלח רשימה לוואטסאפ</button>
       <button className="btn small" style={{marginTop:6,width:"100%"}} onClick={copyWaLog} disabled={main.length===0}>{copiedMsg || "📋 העתק רשימה בפורמט לוג וואטסאפ"}</button>
       <div style={S.addRow}>

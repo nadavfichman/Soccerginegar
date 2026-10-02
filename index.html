@@ -1378,7 +1378,10 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts }) {
 function NewGameForm({ onAdd }) {
   const [kickoff,setKickoff]=useState(""); const [opensAt,setOpensAt]=useState("");
   const [visPrimary,setVisPrimary]=useState(true); const [visSecondary,setVisSecondary]=useState(false);
-  useEffect(()=>{ if(kickoff&&!opensAt){ const d=new Date(kickoff); d.setDate(d.getDate()-2); setOpensAt(toLocalInput(d)); } },[kickoff]);
+  // ברירת מחדל: יומיים לפני המשחק, בשעה 21:00 קבועה — בלי קשר לשעת
+  // המשחק עצמו (למשל משחק ביום ב' 20:00 → פתיחה בשבת 21:00; משחק ביום
+  // ו' 15:15 → פתיחה ביום ד' 21:00). ר' שיחה עם המשתמש.
+  useEffect(()=>{ if(kickoff&&!opensAt){ const d=new Date(kickoff); d.setDate(d.getDate()-2); d.setHours(21,0,0,0); setOpensAt(toLocalInput(d)); } },[kickoff]);
   return (
     <div style={S.formBox}>
       <label style={S.labelSm}>מועד המשחק</label>

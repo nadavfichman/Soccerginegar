@@ -253,6 +253,19 @@ begin
   return true;
 end; $$;
 
+-- עריכת שעת/תאריך משחק אחרי פרסום (ר' migrations/0010) — כל התצוגות
+-- לשחקנים קוראות ישירות מ-games.kickoff, אז השינוי מתעדכן בכל מקום
+-- אוטומטית בלי צורך לעדכן עותקים נפרדים
+create or replace function admin_set_game_kickoff(input_game_id text, input_kickoff bigint, input_pw text, input_phone text, input_pin text)
+returns boolean language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  update games set kickoff = input_kickoff where id = input_game_id;
+  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_set_game_kickoff', jsonb_build_object('game_id', input_game_id, 'kickoff', input_kickoff));
+  return true;
+end; $$;
+
 create or replace function admin_delete_game(input_game_id text, input_pw text, input_phone text, input_pin text)
 returns boolean language plpgsql security definer as $$
 declare v_role text;

@@ -1406,7 +1406,10 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
   const [addId,setAddId]=useState("");
   const [guestName,setGuestName]=useState("");
   const [copiedMsg,setCopiedMsg]=useState("");
+  const [editingKickoff,setEditingKickoff]=useState(false);
+  const [newKickoff,setNewKickoff]=useState("");
   const isOpen = now >= game.opensAt;
+  const hasHappened = now >= game.kickoff;
   const credArgs = { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null };
 
   const setGameField = async (patch) => {
@@ -1436,6 +1439,17 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
   const deleteGame = async () => {
     if (!window.confirm("למחוק את המשחק " + dayName(game.kickoff) + " " + dateOnly(game.kickoff) + "? הפעולה תמחק גם את כל ההרשמות שלו, ולא ניתנת לביטול.")) return;
     await callAdmin("admin_delete_game", { input_game_id: game.id, ...credArgs }); await refresh();
+  };
+  const startEditKickoff = () => { setNewKickoff(toLocalInput(new Date(game.kickoff))); setEditingKickoff(true); };
+  // משנה רק את השעה/תאריך של המשחק עצמו — כל מקום שמציג אותו לשחקנים
+  // (כרטיס, באנר, הודעות וואטסאפ) קורא ישירות מ-game.kickoff, אז השינוי
+  // מתעדכן בכל מקום אוטומטית, בלי עותקים נפרדים לסנכרן.
+  const saveKickoff = async () => {
+    if (!newKickoff) return;
+    const newTs = new Date(newKickoff).getTime();
+    if (!window.confirm("לשנות את שעת המשחק ל-"+dayName(newTs)+" "+fmtTime(newTs)+"? כל השחקנים יראו את השעה המעודכנת.")) return;
+    await callAdmin("admin_set_game_kickoff", { input_game_id: game.id, input_kickoff: newTs, ...credArgs });
+    setEditingKickoff(false); await refresh();
   };
   const setAttendance = async (pid, attended) => {
     if (game.attendanceLocked) return;
@@ -1495,6 +1509,15 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
           <button className="btn danger small" onClick={deleteGame}>מחק</button>
         </div>
       </div>
+      {!hasHappened && (editingKickoff ? (
+        <div style={S.addRow}>
+          <input style={S.selectSm} type="datetime-local" value={newKickoff} onChange={e=>setNewKickoff(e.target.value)} />
+          <button className="btn primary small" onClick={saveKickoff} disabled={!newKickoff}>שמור</button>
+          <button className="btn small" onClick={()=>setEditingKickoff(false)}>ביטול</button>
+        </div>
+      ) : (
+        <button className="btn small" style={{marginTop:8,width:"100%"}} onClick={startEditKickoff}>✏️ ערוך שעת משחק</button>
+      ))}
       <div style={game.rosterPublished?S.pubBarOn:S.pubBar}>
         <span style={S.pubText}>{game.rosterPublished?"✓ המשתתפים מפורסמים — השחקנים רואים את הרשימה":"רשימת המשתתפים מוסתרת — רק אתה רואה אותה"}</span>
         <button className={game.rosterPublished?"btn small":"btn primary small"} onClick={()=>setGameField({roster_published:!game.rosterPublished})}>{game.rosterPublished?"הסתר משתתפים":"פרסם משתתפים"}</button>

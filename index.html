@@ -1635,6 +1635,42 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
         <span style={S.pubText}>{game.registrationClosed?"🔒 ההרשמה סגורה — שחקנים לא יכולים להירשם/לבטל":"ההרשמה פתוחה לשינויים ע\"י שחקנים"}</span>
         <button className={game.registrationClosed?"btn small":"btn danger small"} onClick={()=>setGameField({registration_closed:!game.registrationClosed})}>{game.registrationClosed?"🔓 פתח הרשמה מחדש":"🔒 סגור הרשמה"}</button>
       </div>
+      <button className="btn primary" style={{width:"100%",marginTop:8,padding:12,fontSize:15}} onClick={()=> showTeamSplit ? setShowTeamSplit(false) : openTeamSplit()} disabled={main.length<2}>
+        ⚽ הכן כוחות למשחק {showTeamSplit?"▲":"▼"}
+      </button>
+      {showTeamSplit && teamSplit && (
+        <div style={S.teamSplitPanel}>
+          <div style={S.teamSplitCols}>
+            <div style={{...S.teamCol,background:"#3b82f6"}}>
+              {teamSplit.team1.map(p=>(
+                <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,1)} title="הקש להעברה לקבוצה 2">
+                  <span style={S.teamGradeBadge}>{p.grade}</span>
+                  <span style={S.teamPlayerName}>{p.name}</span>
+                  <span style={S.teamSwapHint}>⇄</span>
+                </div>
+              ))}
+            </div>
+            <div style={{...S.teamCol,background:"#f97316"}}>
+              {teamSplit.team2.map(p=>(
+                <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,2)} title="הקש להעברה לקבוצה 1">
+                  <span style={S.teamSwapHint}>⇄</span>
+                  <span style={S.teamPlayerName}>{p.name}</span>
+                  <span style={S.teamGradeBadge}>{p.grade}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={S.teamSplitFooterRow}>
+            <div style={{...S.teamSplitFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teamSplit.team1.length} שחקנים · דירוג {teamSplit.team1.reduce((s,p)=>s+p.grade,0)}</div>
+            <div style={{...S.teamSplitFooter,background:"#ffedd5",color:"#7c2d12"}}>{teamSplit.team2.length} שחקנים · דירוג {teamSplit.team2.reduce((s,p)=>s+p.grade,0)}</div>
+          </div>
+          <div style={{display:"flex",gap:6,marginTop:8}}>
+            <button className="btn small" style={{flex:1}} onClick={reshuffleTeams}>🔀 ערבב מחדש</button>
+            <button className="btn primary small" style={{flex:1}} onClick={saveTeamSplit}>💾 שמור חלוקה</button>
+          </div>
+          <button className="btn waBtn" style={{width:"100%",marginTop:6}} onClick={shareTeamsImage} disabled={sharingTeams}>{sharingTeams?"מכין תמונה…":"📤 שיתוף לוואטסאפ"}</button>
+        </div>
+      )}
       <div style={{display:"flex",gap:6,alignItems:"center",marginTop:8}}>
         <span style={S.subLine}>מי רואה:</span>
         <span className={game.visibleToPrimary?"pill open":"pill closed"}>קבוצה ראשית</span>
@@ -1660,44 +1696,6 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
       )}
       <button className="btn waBtn" onClick={shareWa} disabled={main.length===0}>שלח רשימה לוואטסאפ</button>
       <button className="btn small" style={{marginTop:6,width:"100%"}} onClick={copyWaLog} disabled={main.length===0}>{copiedMsg || "📋 העתק רשימה בפורמט לוג וואטסאפ"}</button>
-      <div>
-        <button className="btn small" style={{marginTop:6,width:"100%"}} onClick={()=> showTeamSplit ? setShowTeamSplit(false) : openTeamSplit()} disabled={main.length<2}>
-          ⚽ חלוקה לקבוצות {showTeamSplit?"▲":"▼"}
-        </button>
-        {showTeamSplit && teamSplit && (
-          <div style={S.teamSplitPanel}>
-            <div style={S.teamSplitCols}>
-              <div style={{...S.teamCol,background:"#3b82f6"}}>
-                {teamSplit.team1.map(p=>(
-                  <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,1)} title="הקש להעברה לקבוצה 2">
-                    <span style={S.teamGradeBadge}>{p.grade}</span>
-                    <span style={S.teamPlayerName}>{p.name}</span>
-                    <span style={S.teamSwapHint}>⇄</span>
-                  </div>
-                ))}
-              </div>
-              <div style={{...S.teamCol,background:"#f97316"}}>
-                {teamSplit.team2.map(p=>(
-                  <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,2)} title="הקש להעברה לקבוצה 1">
-                    <span style={S.teamSwapHint}>⇄</span>
-                    <span style={S.teamPlayerName}>{p.name}</span>
-                    <span style={S.teamGradeBadge}>{p.grade}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div style={S.teamSplitFooterRow}>
-              <div style={{...S.teamSplitFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teamSplit.team1.length} שחקנים · דירוג {teamSplit.team1.reduce((s,p)=>s+p.grade,0)}</div>
-              <div style={{...S.teamSplitFooter,background:"#ffedd5",color:"#7c2d12"}}>{teamSplit.team2.length} שחקנים · דירוג {teamSplit.team2.reduce((s,p)=>s+p.grade,0)}</div>
-            </div>
-            <div style={{display:"flex",gap:6,marginTop:8}}>
-              <button className="btn small" style={{flex:1}} onClick={reshuffleTeams}>🔀 ערבב מחדש</button>
-              <button className="btn primary small" style={{flex:1}} onClick={saveTeamSplit}>💾 שמור חלוקה</button>
-            </div>
-            <button className="btn waBtn" style={{width:"100%",marginTop:6}} onClick={shareTeamsImage} disabled={sharingTeams}>{sharingTeams?"מכין תמונה…":"📤 שיתוף לוואטסאפ"}</button>
-          </div>
-        )}
-      </div>
       {teamSplit && (
         <div ref={teamCardRef} style={S.teamCardHidden}>
           <div style={S.teamCardHeader}>⚽ כדורגל גניגרי ושות'<br/>{dayName(game.kickoff)} · {fmtTime(game.kickoff)}</div>

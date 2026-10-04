@@ -1866,8 +1866,8 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
         <button className="btn small" onClick={addGuest} disabled={!guestName.trim()}>+ הוסף אורח</button>
       </div>
       <div style={game.attendanceLocked?S.pubBarOn:S.pubBar}>
-        <span style={S.pubText}>{game.attendanceLocked?("🔒 נוכחות נעולה — משחק "+dayName(game.kickoff)+" "+dateOnly(game.kickoff)+". ספירת ההגעות המצטברת כוללת אותו."):"נוכחות פתוחה לעריכה — עדיין לא נספר בעדיפות, עד שתנעל"}</span>
-        <button className={game.attendanceLocked?"btn small":"btn primary small"} onClick={()=>setAttendanceLocked(!game.attendanceLocked)}>{game.attendanceLocked?"🔓 פתח לעריכה":"🔒 נעל משחק"}</button>
+        <span style={S.pubText}>{game.attendanceLocked?("🔒 נוכחות נעולה — משחק "+dayName(game.kickoff)+" "+dateOnly(game.kickoff)+". ספירת ההגעות המצטברת כוללת אותו."):hasHappened?"נוכחות פתוחה לעריכה — עדיין לא נספר בעדיפות, עד שתנעל":"אי אפשר לנעול נוכחות לפני שהמשחק מתקיים"}</span>
+        <button className={game.attendanceLocked?"btn small":"btn primary small"} onClick={()=>setAttendanceLocked(!game.attendanceLocked)} disabled={!game.attendanceLocked && !hasHappened}>{game.attendanceLocked?"🔓 פתח לעריכה":"🔒 נעל משחק"}</button>
       </div>
       {(game.declines||[]).length > 0 && (
         <div style={S.declineSummary}>❌ לא מגיעים ({game.declines.length}): {game.declines.map(d=>nameOf(d.playerId)).join(", ")}</div>

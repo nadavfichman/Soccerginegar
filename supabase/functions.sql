@@ -507,14 +507,22 @@ begin
   return true;
 end; $$;
 
--- נעילת נוכחות למשחק — רק משחקים נעולים נספרים בעדיפות "מתמיד" (ר' index.html)
+-- נעילת נוכחות למשחק — רק משחקים נעולים נספרים בעדיפות "מתמיד" (ר' index.html).
+-- מ-migration 0018: אסור לנעול משחק שעדיין לא התקיים (אין עדיין נוכחות
+-- אמיתית לנעול) — אותו דפוס כמו ה-guard ב-admin_set_game_kickoff. פתיחה
+-- מחדש (input_locked=false) תמיד מותרת.
 create or replace function admin_set_attendance_locked(
   input_game_id text, input_locked boolean,
   input_pw text default null, input_phone text default null, input_pin text default null
 ) returns boolean language plpgsql security definer as $$
-declare v_role text;
+declare v_role text; v_kickoff bigint;
 begin
   v_role := require_admin(input_pw, input_phone, input_pin);
+  if input_locked then
+    select kickoff into v_kickoff from games where id = input_game_id;
+    if v_kickoff is null then raise exception 'game_not_found'; end if;
+    if v_kickoff > floor(extract(epoch from now())*1000) then raise exception 'game_not_happened_yet'; end if;
+  end if;
   update games set attendance_locked = input_locked where id = input_game_id;
   perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_set_attendance_locked', jsonb_build_object('game_id', input_game_id, 'locked', input_locked));
   return true;

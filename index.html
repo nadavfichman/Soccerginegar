@@ -1669,17 +1669,17 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
             <div style={S.teamSplitCols}>
               <div style={{...S.teamCol,background:"#3b82f6"}}>
                 {teamSplit.team1.map(p=>(
-                  <div key={p.id} style={S.teamPlayerRow}>
+                  <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,1)} title="הקש להעברה לקבוצה 2">
                     <span style={S.teamGradeBadge}>{p.grade}</span>
                     <span style={S.teamPlayerName}>{p.name}</span>
-                    <button className="mini" onClick={()=>swapPlayer(p.id,1)} title="העבר לקבוצה 2">⇄</button>
+                    <span style={S.teamSwapHint}>⇄</span>
                   </div>
                 ))}
               </div>
               <div style={{...S.teamCol,background:"#f97316"}}>
                 {teamSplit.team2.map(p=>(
-                  <div key={p.id} style={S.teamPlayerRow}>
-                    <button className="mini" onClick={()=>swapPlayer(p.id,2)} title="העבר לקבוצה 1">⇄</button>
+                  <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,2)} title="הקש להעברה לקבוצה 1">
+                    <span style={S.teamSwapHint}>⇄</span>
                     <span style={S.teamPlayerName}>{p.name}</span>
                     <span style={S.teamGradeBadge}>{p.grade}</span>
                   </div>
@@ -2167,21 +2167,22 @@ const S = {
   flagLabel: { display:"flex", alignItems:"center", gap:5, fontSize:13, cursor:"pointer" },
   pubBar: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, background:"#fef3c7", padding:"10px 12px", borderRadius:8, marginTop:10, flexWrap:"wrap" },
   pubBarOn: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, background:"#dcfce7", padding:"10px 12px", borderRadius:8, marginTop:10, flexWrap:"wrap" },
-  teamSplitPanel: { marginTop:8, borderRadius:14, overflow:"hidden", boxShadow:"0 2px 8px rgba(0,0,0,.08)" },
+  teamSplitPanel: { marginTop:8, borderRadius:20, overflow:"hidden", boxShadow:"0 2px 10px rgba(0,0,0,.1)" },
   teamSplitCols: { display:"flex" },
-  teamCol: { flex:1, padding:"10px 8px", minWidth:0 },
+  teamCol: { flex:1, padding:"14px 12px", minWidth:0 },
   teamColTitle: { fontWeight:800, fontSize:12, color:"#166534", marginBottom:6 },
-  teamPlayerRow: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, fontSize:13, padding:"6px 2px", borderBottom:"1px solid rgba(255,255,255,0.25)", color:"#fff" },
-  teamPlayerName: { flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" },
-  teamGradeBadge: { display:"inline-flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:"50%", background:"rgba(0,0,0,0.25)", fontSize:12, fontWeight:800, color:"#fff", flexShrink:0 },
+  teamPlayerRow: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, fontSize:14, padding:"9px 2px", color:"#fff", cursor:"pointer" },
+  teamPlayerName: { flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight:700 },
+  teamGradeBadge: { display:"inline-flex", alignItems:"center", justifyContent:"center", width:30, height:30, borderRadius:"50%", background:"#5b6b7a", fontSize:13, fontWeight:800, color:"#fff", flexShrink:0 },
+  teamSwapHint: { opacity:0.55, fontSize:13, flexShrink:0 },
   teamSplitFooterRow: { display:"flex" },
-  teamSplitFooter: { flex:1, textAlign:"center", fontWeight:800, fontSize:12, padding:"8px 4px" },
+  teamSplitFooter: { flex:1, textAlign:"center", fontWeight:800, fontSize:12, padding:"10px 4px" },
   teamCardHidden: { position:"absolute", left:-9999, top:0, width:440, background:"#fff", fontFamily:"'Heebo',system-ui,sans-serif", direction:"rtl", borderRadius:18, overflow:"hidden", boxShadow:"0 4px 18px rgba(0,0,0,.12)" },
   teamCardHeader: { textAlign:"center", fontWeight:800, fontSize:17, color:"#166534", padding:"20px 10px", background:"#f2f6f0", lineHeight:1.7 },
   teamCardCols: { display:"flex" },
-  teamCardCol: { flex:1, padding:"18px 14px", color:"#fff", fontWeight:700, fontSize:16 },
-  teamCardPlayer: { display:"flex", alignItems:"center", gap:10, padding:"9px 0", borderBottom:"1px solid rgba(255,255,255,0.25)" },
-  teamCardBadge: { display:"inline-flex", alignItems:"center", justifyContent:"center", width:24, height:24, borderRadius:"50%", background:"rgba(255,255,255,0.25)", fontSize:12, fontWeight:800, flexShrink:0 },
+  teamCardCol: { flex:1, padding:"18px 16px", color:"#fff", fontWeight:700, fontSize:16 },
+  teamCardPlayer: { display:"flex", alignItems:"center", gap:10, padding:"8px 0" },
+  teamCardBadge: { display:"inline-flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:"50%", background:"#5b6b7a", fontSize:12, fontWeight:800, flexShrink:0 },
   teamCardFooterRow: { display:"flex" },
   teamCardFooter: { flex:1, textAlign:"center", fontWeight:800, fontSize:13, padding:"10px 0" },
   pubText: { fontSize:13, fontWeight:600, color:"#3f3f2e" },

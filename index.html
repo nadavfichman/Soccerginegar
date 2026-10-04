@@ -786,6 +786,11 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
   const [pw,setPw]=useState(""); const [pin,setPin]=useState("");
   const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
   const [hint,setHint]=useState(null); // 'super' | 'admin' | null — רמז בלבד, לא מעניק הרשאה
+  // טאב תחתון (ר' שיחה עם המשתמש — בהשראת הניווט של TeamPicker) — רק
+  // לאדמין-על, שיש לו גם "משחקים" וגם "שחקנים"; מנהל רגיל רואה רק משחקים,
+  // אין טעם בטאבים בשבילו. "insights"/סטטיסטיקה עתידית — טאב שלישי שיתווסף
+  // כשיהיה לו תוכן אמיתי, לא placeholder ריק עכשיו.
+  const [activeTab,setActiveTab]=useState("games"); // "games" | "players"
   // דירוגי שחקנים לחלוקת כוחות (ר' migrations/0014) — נשמרים בטבלה נעולה,
   // בלי SELECT ציבורי, נטענים רק כאן דרך RPC אדמין אחרי התחברות מוצלחת.
   const [grades,setGrades]=useState({});
@@ -855,19 +860,35 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
 
   const isSuper = role === "super";
   return (
-    <main style={S.main}>
+    <main style={isSuper?{...S.main,paddingBottom:74}:S.main}>
       <section style={S.roleBar}>
         <span style={S.roleTag}>{isSuper?"אדמין־על":"מנהל"}</span>
         <button className="btn small" onClick={()=>{setRole(null);setCred(null);setPw("");setPin("");}}>יציאה</button>
       </section>
-      {isSuper && (
+      {isSuper && <SuperAdminPanel {...{ admins, roster, refresh, cred, session }} />}
+      {isSuper ? (
         <>
-          <SuperAdminPanel {...{ admins, roster, refresh, cred, session }} />
-          <PendingRequests {...{ pending, roster, refresh, cred }} />
+          {activeTab==="games" && <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />}
+          {activeTab==="players" && (
+            <>
+              <PendingRequests {...{ pending, roster, refresh, cred }} />
+              <AdminRoster {...{ roster, admins, refresh, cred, attendanceCounts, grades, refreshGrades }} />
+            </>
+          )}
         </>
+      ) : (
+        <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />
       )}
-      <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />
-      {isSuper && <AdminRoster {...{ roster, admins, refresh, cred, attendanceCounts, grades, refreshGrades }} />}
+      {isSuper && (
+        <nav style={S.bottomTabBar}>
+          <button style={activeTab==="games"?S.bottomTabActive:S.bottomTab} onClick={()=>setActiveTab("games")}>
+            <span style={{fontSize:20}}>⚽</span>משחקים
+          </button>
+          <button style={activeTab==="players"?S.bottomTabActive:S.bottomTab} onClick={()=>setActiveTab("players")}>
+            <span style={{fontSize:20}}>👥</span>שחקנים
+          </button>
+        </nav>
+      )}
     </main>
   );
 }
@@ -2222,6 +2243,12 @@ const S = {
   iosHelpBox: { background:"#fff", borderRadius:14, padding:20, maxWidth:340, width:"100%" },
   errBar: { background:"#fee2e2", color:"#b91c1c", padding:"10px 14px", textAlign:"center", fontSize:13, fontWeight:700 },
   main: { padding:14, display:"flex", flexDirection:"column", gap:14 },
+  // ניווט תחתון קבוע (ר' שיחה עם המשתמש, בהשראת TeamPicker) — left:50%+
+  // translateX כדי להתיישר עם רוחב ה-app (maxWidth:640, ממורכז) במקום
+  // להימתח על כל רוחב המסך במסכים רחבים.
+  bottomTabBar: { position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:640, display:"flex", background:"#fff", borderTop:"1px solid #e2e8e2", boxShadow:"0 -2px 10px rgba(0,0,0,.08)", zIndex:20 },
+  bottomTab: { flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:2, padding:"8px 0 10px", background:"none", border:"none", fontSize:11, color:"#6b7280", cursor:"pointer", fontFamily:"inherit" },
+  bottomTabActive: { flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:2, padding:"8px 0 10px", background:"none", border:"none", fontSize:11, color:"#166534", fontWeight:800, cursor:"pointer", fontFamily:"inherit" },
   card: { background:"#fff", borderRadius:14, padding:16, boxShadow:"0 1px 3px rgba(0,0,0,.06)" },
   cardHot: { outline:"2px solid #f59e0b" },
   roleBar: { display:"flex", justifyContent:"space-between", alignItems:"center", background:"#166534", color:"#fff", borderRadius:12, padding:"10px 14px" },

@@ -1715,27 +1715,29 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
       <button className="btn waBtn" onClick={shareWa} disabled={main.length===0}>שלח רשימה לוואטסאפ</button>
       <button className="btn small" style={{marginTop:6,width:"100%"}} onClick={copyWaLog} disabled={main.length===0}>{copiedMsg || "📋 העתק רשימה בפורמט לוג וואטסאפ"}</button>
       {teamSplit && (
-        <div ref={teamCardRef} style={S.teamCardHidden}>
-          <div style={S.teamCardHeader}>⚽ כדורגל גניגרי ושות'<br/>{dayName(game.kickoff)} · {fmtTime(game.kickoff)}</div>
-          <div style={S.teamCardCols}>
-            <div style={{...S.teamCardCol,background:"#3b82f6"}}>
-              {teamSplit.team1.map((p,i)=>(
-                <div key={p.id} style={S.teamCardPlayer}>
-                  <span style={S.teamCardBadge}>{i+1}</span><span>{p.name}</span>
-                </div>
-              ))}
+        <div style={S.teamCardWrap}>
+          <div ref={teamCardRef} style={S.teamCardHidden}>
+            <div style={S.teamCardHeader}>⚽ כדורגל גניגרי ושות'<br/>{dayName(game.kickoff)} · {fmtTime(game.kickoff)}</div>
+            <div style={S.teamCardCols}>
+              <div style={{...S.teamCardCol,background:"#3b82f6"}}>
+                {teamSplit.team1.map((p,i)=>(
+                  <div key={p.id} style={S.teamCardPlayer}>
+                    <span style={S.teamCardBadge}>{i+1}</span><span>{p.name}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{...S.teamCardCol,background:"#f97316"}}>
+                {teamSplit.team2.map((p,i)=>(
+                  <div key={p.id} style={S.teamCardPlayer}>
+                    <span style={S.teamCardBadge}>{i+1}</span><span>{p.name}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div style={{...S.teamCardCol,background:"#f97316"}}>
-              {teamSplit.team2.map((p,i)=>(
-                <div key={p.id} style={S.teamCardPlayer}>
-                  <span style={S.teamCardBadge}>{i+1}</span><span>{p.name}</span>
-                </div>
-              ))}
+            <div style={S.teamCardFooterRow}>
+              <div style={{...S.teamCardFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teamSplit.team1.length} שחקנים</div>
+              <div style={{...S.teamCardFooter,background:"#ffedd5",color:"#7c2d12"}}>{teamSplit.team2.length} שחקנים</div>
             </div>
-          </div>
-          <div style={S.teamCardFooterRow}>
-            <div style={{...S.teamCardFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teamSplit.team1.length} שחקנים</div>
-            <div style={{...S.teamCardFooter,background:"#ffedd5",color:"#7c2d12"}}>{teamSplit.team2.length} שחקנים</div>
           </div>
         </div>
       )}
@@ -2195,11 +2197,14 @@ const S = {
   teamSwapHint: { opacity:0.55, fontSize:13, flexShrink:0 },
   teamSplitFooterRow: { display:"flex" },
   teamSplitFooter: { flex:1, textAlign:"center", fontWeight:800, fontSize:12, padding:"10px 4px" },
-  // position:fixed+transform (לא absolute+left שלילי) — באפליקציה RTL,
-  // left שלילי גדול יכול להרחיב את גלילת הדף כולו לאזור ריק (ר' שיחה עם
-  // המשתמש, המסך התרוקן אחרי שהכרטיס הזה סוף-סוף נרנדר לראשונה בפועל).
-  // fixed+transform לא משפיעים על גלילת המסמך בשום מצב, RTL או לא.
-  teamCardHidden: { position:"fixed", top:0, left:0, transform:"translateX(200%)", pointerEvents:"none", width:440, background:"#fff", fontFamily:"'Heebo',system-ui,sans-serif", direction:"rtl", borderRadius:18, overflow:"hidden", boxShadow:"0 4px 18px rgba(0,0,0,.12)" },
+  // עטיפה עם height:0+overflow:hidden (לא position:absolute/fixed) —
+  // גם position:absolute עם left שלילי (גרם למסך ריק ב-RTL) וגם
+  // position:fixed+transform (גרם לתמונת html2canvas ריקה — בעיה ידועה
+  // של html2canvas עם fixed+transform) לא עבדו. height:0 על ההורה לא
+  // משפיע בכלל על גלילת המסמך, ו-html2canvas מצלם את הגודל הטבעי המלא
+  // של האלמנט הפנימי (teamCardRef) בלי קשר לחיתוך ה-overflow של ההורה.
+  teamCardWrap: { height:0, overflow:"hidden" },
+  teamCardHidden: { width:440, background:"#fff", fontFamily:"'Heebo',system-ui,sans-serif", direction:"rtl", borderRadius:18, overflow:"hidden", boxShadow:"0 4px 18px rgba(0,0,0,.12)" },
   teamCardHeader: { textAlign:"center", fontWeight:800, fontSize:17, color:"#166534", padding:"20px 10px", background:"#f2f6f0", lineHeight:1.7 },
   teamCardCols: { display:"flex" },
   teamCardCol: { flex:1, padding:"18px 16px", color:"#fff", fontWeight:700, fontSize:16 },

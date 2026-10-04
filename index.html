@@ -685,7 +685,12 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts, hideHeader
 
   return (
     <section style={S.gameCard}>
-      {isOpen ? (
+      {registrationClosed ? (
+        <div style={S.closedBanner}>
+          <div style={S.closedBannerTitle}>🔒 ההרשמה סגורה</div>
+          <div style={S.closedBannerSub}>למשחק ב{dayName(game.kickoff)} בשעה {fmtTime(game.kickoff)}</div>
+        </div>
+      ) : isOpen ? (
         <div style={S.openBanner}>
           <div style={S.openBannerTitle}>🟢 ההרשמה פתוחה</div>
           <div style={S.openBannerSub}>למשחק ב{dayName(game.kickoff)} בשעה {fmtTime(game.kickoff)}</div>
@@ -698,9 +703,7 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts, hideHeader
       {isOpen && <div style={S.liveCountBar}>👥 {game.registrations.length} נרשמו עד כה למשחק</div>}
       {isOpen && !rosterPublished && !registrationClosed && game.registrations.length>0 &&
         <LiveRegisteredNames regs={game.registrations} roster={roster} meId={me.id} />}
-      {registrationClosed ? (
-        <div style={S.lockedNote}>🔒 ההרשמה למשחק זה סגורה</div>
-      ) : isOpen ? (
+      {registrationClosed ? null : isOpen ? (
         myReg ? (
           <div style={S.regBox}>
             <div style={S.regConfirm}><span style={S.regCheck}>✓</span> נרשמת למשחק</div>
@@ -1948,6 +1951,9 @@ const S = {
   openBanner: { textAlign:"center", padding:"12px 10px", borderRadius:10, background:"#dcfce7", marginBottom:10 },
   openBannerTitle: { fontWeight:800, fontSize:18, color:"#166534" },
   openBannerSub: { fontWeight:700, fontSize:15, color:"#166534", marginTop:4 },
+  closedBanner: { textAlign:"center", padding:"12px 10px", borderRadius:10, background:"#fee2e2", marginBottom:10, border:"1px solid #fca5a5" },
+  closedBannerTitle: { fontWeight:800, fontSize:18, color:"#991b1b" },
+  closedBannerSub: { fontWeight:700, fontSize:15, color:"#991b1b", marginTop:4 },
   liveCountBar: { fontSize:13, fontWeight:600, color:"#166534", background:"#f0fdf4", border:"1px solid #bbf7d0", padding:"8px 10px", borderRadius:8, marginBottom:10, textAlign:"center" },
   regBox: { display:"flex", flexDirection:"column", gap:10, margin:"12px 0" },
   regConfirm: { display:"flex", alignItems:"center", gap:8, fontWeight:800, fontSize:17, color:"#166534", background:"#dcfce7", padding:"12px 14px", borderRadius:10, justifyContent:"center" },

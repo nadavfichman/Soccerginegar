@@ -290,6 +290,7 @@ function App() {
     id: g.id, kickoff: g.kickoff, opensAt: g.opens_at,
     published: g.published, rosterPublished: g.roster_published, attendanceLocked: !!g.attendance_locked,
     visibleToPrimary: !!g.visible_to_primary, visibleToSecondary: !!g.visible_to_secondary,
+    registrationClosed: !!g.registration_closed,
     registrations: regs.filter(r => r.game_id === g.id).map(r => ({ playerId: r.player_id, ts: r.ts, attended: !!r.attended, guestName: r.guest_name || null })),
     declines: declines.filter(d => d.game_id === g.id).map(d => ({ playerId: d.player_id, ts: d.ts })),
   }));
@@ -641,11 +642,12 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts, hideHeader
   const myReg = game.registrations.find(r=>r.playerId===me.id);
   const myDecline = (game.declines||[]).find(d=>d.playerId===me.id);
   const rosterPublished = game.rosterPublished === true;
+  const registrationClosed = game.registrationClosed === true;
   const [busy,setBusy]=useState(false);
 
   const [regErr,setRegErr]=useState("");
   const register = async () => {
-    if(!isOpen||myReg||busy) return; setBusy(true); setRegErr("");
+    if(registrationClosed||!isOpen||myReg||busy) return; setBusy(true); setRegErr("");
     const { data, error } = await db.rpc("register_for_game", { input_game_id: game.id, input_player_id: me.id });
     if (error) setRegErr("שגיאה בהרשמה — נסה שוב.");
     else if (data === "not_authorized") setRegErr("לא ניתן לרשום — יש להתחבר מחדש.");
@@ -653,6 +655,7 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts, hideHeader
   };
   const [cancelErr,setCancelErr]=useState("");
   const unregister = async () => {
+    if(registrationClosed) return;
     setCancelErr(""); setBusy(true);
     const { data, error } = await db.rpc("cancel_own_registration", { input_game_id: game.id, input_player_id: me.id });
     setBusy(false);
@@ -665,13 +668,14 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts, hideHeader
   // אוטומטית הרשמה קיימת אם יש — שני המצבים הדדיים, אי אפשר להיות גם וגם.
   const [declineErr,setDeclineErr]=useState("");
   const decline = async () => {
-    if(!isOpen||myDecline||busy) return; setBusy(true); setDeclineErr("");
+    if(registrationClosed||!isOpen||myDecline||busy) return; setBusy(true); setDeclineErr("");
     const { data, error } = await db.rpc("decline_game", { input_game_id: game.id, input_player_id: me.id });
     if (error) setDeclineErr("שגיאה בסימון — נסה שוב.");
     else if (data === "not_authorized") setDeclineErr("לא ניתן לסמן — יש להתחבר מחדש.");
     setBusy(false); await refresh();
   };
   const cancelDecline = async () => {
+    if(registrationClosed) return;
     setDeclineErr(""); setBusy(true);
     const { error } = await db.rpc("cancel_own_decline", { input_game_id: game.id, input_player_id: me.id });
     setBusy(false);
@@ -692,9 +696,11 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts, hideHeader
         </div>
       )}
       {isOpen && <div style={S.liveCountBar}>👥 {game.registrations.length} נרשמו עד כה למשחק</div>}
-      {isOpen && !rosterPublished && game.registrations.length>0 &&
+      {isOpen && !rosterPublished && !registrationClosed && game.registrations.length>0 &&
         <LiveRegisteredNames regs={game.registrations} roster={roster} meId={me.id} />}
-      {isOpen ? (
+      {registrationClosed ? (
+        <div style={S.lockedNote}>🔒 ההרשמה למשחק זה סגורה</div>
+      ) : isOpen ? (
         myReg ? (
           <div style={S.regBox}>
             <div style={S.regConfirm}><span style={S.regCheck}>✓</span> נרשמת למשחק</div>
@@ -722,8 +728,8 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts, hideHeader
           </>
         )
       ) : <div style={S.closedNote}>ההרשמה עדיין סגורה</div>}
-      {rosterPublished ? (
-        <><div style={S.publishedTag}>רשימת המשתתפים פורסמה</div>
+      {(rosterPublished || registrationClosed) ? (
+        <><div style={S.publishedTag}>{registrationClosed && !rosterPublished ? "רשימה סגורה" : "רשימת המשתתפים פורסמה"}</div>
         <PlayerRosterList main={main} wait={wait} roster={roster} meId={me.id} /></>
       ) : (myReg && <div style={S.pendingRoster}>רשימת המשתתפים במשחק תפורסם בקבוצת הוואטסאפ, בהתאם למגבלת כמות השחקנים במשחק.</div>)}
     </section>
@@ -1418,6 +1424,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
     if ("roster_published" in patch) await callAdmin("admin_set_roster_published", { input_game_id: game.id, input_roster_published: patch.roster_published, ...credArgs });
     if ("visible_to_primary" in patch) await callAdmin("admin_set_game_visible_primary", { input_game_id: game.id, input_value: patch.visible_to_primary, ...credArgs });
     if ("visible_to_secondary" in patch) await callAdmin("admin_set_game_visible_secondary", { input_game_id: game.id, input_value: patch.visible_to_secondary, ...credArgs });
+    if ("registration_closed" in patch) await callAdmin("admin_set_registration_closed", { input_game_id: game.id, input_value: patch.registration_closed, ...credArgs });
     await refresh();
   };
   const removeReg = async (pid, name) => {
@@ -1547,6 +1554,10 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
       <div style={game.rosterPublished?S.pubBarOn:S.pubBar}>
         <span style={S.pubText}>{game.rosterPublished?"✓ המשתתפים מפורסמים — השחקנים רואים את הרשימה":"רשימת המשתתפים מוסתרת — רק אתה רואה אותה"}</span>
         <button className={game.rosterPublished?"btn small":"btn primary small"} onClick={()=>setGameField({roster_published:!game.rosterPublished})}>{game.rosterPublished?"הסתר משתתפים":"פרסם משתתפים"}</button>
+      </div>
+      <div style={game.registrationClosed?S.pubBarOn:S.pubBar}>
+        <span style={S.pubText}>{game.registrationClosed?"🔒 ההרשמה סגורה — שחקנים לא יכולים להירשם/לבטל":"ההרשמה פתוחה לשינויים ע\"י שחקנים"}</span>
+        <button className={game.registrationClosed?"btn small":"btn danger small"} onClick={()=>setGameField({registration_closed:!game.registrationClosed})}>{game.registrationClosed?"🔓 פתח הרשמה מחדש":"🔒 סגור הרשמה"}</button>
       </div>
       <div style={{display:"flex",gap:6,alignItems:"center",marginTop:8}}>
         <span style={S.subLine}>מי רואה:</span>

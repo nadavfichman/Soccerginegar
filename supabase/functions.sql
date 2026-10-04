@@ -273,6 +273,21 @@ begin
   return true;
 end; $$;
 
+-- "סגור הרשמה" (ר' migrations/0012) — דגל נפרד מ-roster_published/
+-- attendance_locked: מקפיא ידנית את רשימת הנרשמים למשחק, בלי קשר ל-
+-- opens_at, וניתן לפתיחה מחדש (toggle). אכיפה בצד השרת בכל ה-RPCs
+-- שמשנים הרשמה/סימון של שחקן (register_for_game, decline_game,
+-- cancel_own_registration, cancel_own_decline) — לא רק חסימת UI.
+create or replace function admin_set_registration_closed(input_game_id text, input_value boolean, input_pw text, input_phone text, input_pin text)
+returns boolean language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  update games set registration_closed = input_value where id = input_game_id;
+  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_set_registration_closed', jsonb_build_object('game_id', input_game_id, 'value', input_value));
+  return true;
+end; $$;
+
 create or replace function admin_delete_game(input_game_id text, input_pw text, input_phone text, input_pin text)
 returns boolean language plpgsql security definer as $$
 declare v_role text;
@@ -550,6 +565,9 @@ begin
   if v_uid is null or not exists (select 1 from players where id=input_player_id and auth_user_id=v_uid) then
     return 'not_authorized';
   end if;
+  if exists (select 1 from games where id = input_game_id and registration_closed) then
+    return 'registration_closed';
+  end if;
   delete from registrations where game_id=input_game_id and player_id=input_player_id;
   insert into game_declines (game_id, player_id, ts) values (input_game_id, input_player_id, (extract(epoch from now())*1000)::bigint)
     on conflict (game_id, player_id) do update set ts = excluded.ts;
@@ -563,6 +581,9 @@ declare v_uid uuid;
 begin
   v_uid := auth.uid();
   if v_uid is null or not exists (select 1 from players where id=input_player_id and auth_user_id=v_uid) then
+    return false;
+  end if;
+  if exists (select 1 from games where id = input_game_id and registration_closed) then
     return false;
   end if;
   delete from game_declines where game_id=input_game_id and player_id=input_player_id;
@@ -579,6 +600,9 @@ begin
   v_uid := auth.uid();
   if v_uid is null or not exists (select 1 from players where id=input_player_id and auth_user_id=v_uid) then
     return 'not_authorized';
+  end if;
+  if exists (select 1 from games where id = input_game_id and registration_closed) then
+    return 'registration_closed';
   end if;
   select exists(select 1 from registrations where game_id=input_game_id and player_id=input_player_id) into already_registered;
   if already_registered then return 'already_registered'; end if;
@@ -604,6 +628,9 @@ declare v_uid uuid;
 begin
   v_uid := auth.uid();
   if v_uid is null or not exists (select 1 from players where id=input_player_id and auth_user_id=v_uid) then
+    return false;
+  end if;
+  if exists (select 1 from games where id = input_game_id and registration_closed) then
     return false;
   end if;
   delete from registrations where game_id=input_game_id and player_id=input_player_id;

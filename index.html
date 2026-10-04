@@ -1667,24 +1667,28 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
         {showTeamSplit && teamSplit && (
           <div style={S.teamSplitPanel}>
             <div style={S.teamSplitCols}>
-              <div style={S.teamCol}>
-                <div style={S.teamColTitle}>קבוצה 1 ({teamSplit.team1.length}) · דירוג: {teamSplit.team1.reduce((s,p)=>s+p.grade,0)}</div>
+              <div style={{...S.teamCol,background:"#3b82f6"}}>
                 {teamSplit.team1.map(p=>(
                   <div key={p.id} style={S.teamPlayerRow}>
-                    <span>{p.name} ({p.grade})</span>
+                    <span style={S.teamGradeBadge}>{p.grade}</span>
+                    <span style={S.teamPlayerName}>{p.name}</span>
                     <button className="mini" onClick={()=>swapPlayer(p.id,1)} title="העבר לקבוצה 2">⇄</button>
                   </div>
                 ))}
               </div>
-              <div style={S.teamCol}>
-                <div style={S.teamColTitle}>קבוצה 2 ({teamSplit.team2.length}) · דירוג: {teamSplit.team2.reduce((s,p)=>s+p.grade,0)}</div>
+              <div style={{...S.teamCol,background:"#f97316"}}>
                 {teamSplit.team2.map(p=>(
                   <div key={p.id} style={S.teamPlayerRow}>
                     <button className="mini" onClick={()=>swapPlayer(p.id,2)} title="העבר לקבוצה 1">⇄</button>
-                    <span>{p.name} ({p.grade})</span>
+                    <span style={S.teamPlayerName}>{p.name}</span>
+                    <span style={S.teamGradeBadge}>{p.grade}</span>
                   </div>
                 ))}
               </div>
+            </div>
+            <div style={S.teamSplitFooterRow}>
+              <div style={{...S.teamSplitFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teamSplit.team1.length} שחקנים · דירוג {teamSplit.team1.reduce((s,p)=>s+p.grade,0)}</div>
+              <div style={{...S.teamSplitFooter,background:"#ffedd5",color:"#7c2d12"}}>{teamSplit.team2.length} שחקנים · דירוג {teamSplit.team2.reduce((s,p)=>s+p.grade,0)}</div>
             </div>
             <div style={{display:"flex",gap:6,marginTop:8}}>
               <button className="btn small" style={{flex:1}} onClick={reshuffleTeams}>🔀 ערבב מחדש</button>
@@ -2163,11 +2167,15 @@ const S = {
   flagLabel: { display:"flex", alignItems:"center", gap:5, fontSize:13, cursor:"pointer" },
   pubBar: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, background:"#fef3c7", padding:"10px 12px", borderRadius:8, marginTop:10, flexWrap:"wrap" },
   pubBarOn: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, background:"#dcfce7", padding:"10px 12px", borderRadius:8, marginTop:10, flexWrap:"wrap" },
-  teamSplitPanel: { marginTop:8, padding:10, border:"1px solid #e2e8e2", borderRadius:10, background:"#fafcfa" },
-  teamSplitCols: { display:"flex", gap:8 },
-  teamCol: { flex:1, background:"#fff", border:"1px solid #e2e8e2", borderRadius:8, padding:8, minWidth:0 },
+  teamSplitPanel: { marginTop:8, borderRadius:14, overflow:"hidden", boxShadow:"0 2px 8px rgba(0,0,0,.08)" },
+  teamSplitCols: { display:"flex" },
+  teamCol: { flex:1, padding:"10px 8px", minWidth:0 },
   teamColTitle: { fontWeight:800, fontSize:12, color:"#166534", marginBottom:6 },
-  teamPlayerRow: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:6, fontSize:13, padding:"4px 0", borderBottom:"1px solid #f0f0f0" },
+  teamPlayerRow: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, fontSize:13, padding:"6px 2px", borderBottom:"1px solid rgba(255,255,255,0.25)", color:"#fff" },
+  teamPlayerName: { flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" },
+  teamGradeBadge: { display:"inline-flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:"50%", background:"rgba(0,0,0,0.25)", fontSize:12, fontWeight:800, color:"#fff", flexShrink:0 },
+  teamSplitFooterRow: { display:"flex" },
+  teamSplitFooter: { flex:1, textAlign:"center", fontWeight:800, fontSize:12, padding:"8px 4px" },
   teamCardHidden: { position:"absolute", left:-9999, top:0, width:440, background:"#fff", fontFamily:"'Heebo',system-ui,sans-serif", direction:"rtl", borderRadius:18, overflow:"hidden", boxShadow:"0 4px 18px rgba(0,0,0,.12)" },
   teamCardHeader: { textAlign:"center", fontWeight:800, fontSize:17, color:"#166534", padding:"20px 10px", background:"#f2f6f0", lineHeight:1.7 },
   teamCardCols: { display:"flex" },

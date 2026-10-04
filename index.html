@@ -1684,6 +1684,11 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
     if (!teamSplit || !teamCardRef.current || typeof html2canvas === "undefined") return;
     setSharingTeams(true);
     try {
+      // שומר את החלוקה לפני השיתוף (לא רק אחרי לחיצה נפרדת על "שמור
+      // חלוקה") — כך שגם אם הדפדפן נטען מחדש בחזרה מתפריט השיתוף של
+      // וואטסאפ (קורה בפועל בחלק מהדפדפנים במובייל), פתיחת הפאנל מחדש
+      // תטען בחזרה בדיוק את אותה חלוקה, במקום שהיא "תיעלם". ר' שיחה עם המשתמש.
+      await saveTeamSplit();
       const canvas = await html2canvas(teamCardRef.current, { backgroundColor: "#ffffff", scale: 2 });
       const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
       if (!blob) { setSharingTeams(false); return; }

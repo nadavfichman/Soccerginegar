@@ -410,6 +410,37 @@ begin
     order by g.kickoff desc;
 end; $$;
 
+-- "פורמה" — 5 התוצאות האחרונות לכל שחקן (ר' migrations/0017), נגזר מ-
+-- game_teams+game_results הקיימים (בלי טבלה חדשה). ניצחון/הפסד/תיקו
+-- נקבע לפי team ששויך לו מול game_results. לתצוגה כנקודות צבעוניות
+-- ליד כל שם בפאנל חלוקת הכוחות (ירוק/אדום/כחול, ר' שיחה עם המשתמש).
+create or replace function admin_get_player_form(input_player_ids text[], input_pw text, input_phone text, input_pin text)
+returns table(player_id text, kickoff bigint, outcome text)
+language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  return query
+    select x.player_id, x.kickoff, x.outcome from (
+      select gt.player_id, g.kickoff,
+        case
+          when gt.team = 1 and gr.team1_score > gr.team2_score then 'win'
+          when gt.team = 1 and gr.team1_score < gr.team2_score then 'loss'
+          when gt.team = 1 then 'draw'
+          when gt.team = 2 and gr.team2_score > gr.team1_score then 'win'
+          when gt.team = 2 and gr.team2_score < gr.team1_score then 'loss'
+          else 'draw'
+        end as outcome,
+        row_number() over (partition by gt.player_id order by g.kickoff desc) as rn
+      from game_teams gt
+      join game_results gr on gr.game_id = gt.game_id
+      join games g on g.id = gt.game_id
+      where gt.player_id = any(input_player_ids)
+    ) x
+    where x.rn <= 5
+    order by x.player_id, x.kickoff desc;
+end; $$;
+
 -- הוחלפו (drop + create) כי היו קיימות קודם עם 2 פרמטרים בלבד, בלי אימות הרשאה כלל
 drop function if exists admin_add_registration(text, text);
 create or replace function admin_add_registration(

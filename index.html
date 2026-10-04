@@ -860,11 +860,25 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
 
   const isSuper = role === "super";
   return (
-    <main style={isSuper?{...S.main,paddingBottom:74}:S.main}>
+    <main style={S.main}>
       <section style={S.roleBar}>
         <span style={S.roleTag}>{isSuper?"אדמין־על":"מנהל"}</span>
         <button className="btn small" onClick={()=>{setRole(null);setCred(null);setPw("");setPin("");}}>יציאה</button>
       </section>
+      {isSuper && (
+        // position:fixed/bottom:0 נבדק ונכשל בפועל — חלק מדפדפני המובייל
+        // (בעיקר כרום באייפון) מציגים סרגל כלים קבוע משלהם בתחתית המסך,
+        // שמכסה/חוטף הקשות מעל כל תוכן fixed שלנו שם. טאב רגיל בראש
+        // התוכן פותר את זה לגמרי (ר' שיחה עם המשתמש — "לוחץ ולא קורה כלום").
+        <nav style={S.tabSwitcher}>
+          <button style={activeTab==="games"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("games")}>
+            ⚽ משחקים
+          </button>
+          <button style={activeTab==="players"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("players")}>
+            👥 שחקנים
+          </button>
+        </nav>
+      )}
       {isSuper && <SuperAdminPanel {...{ admins, roster, refresh, cred, session }} />}
       {isSuper ? (
         <>
@@ -878,16 +892,6 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
         </>
       ) : (
         <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />
-      )}
-      {isSuper && (
-        <nav style={S.bottomTabBar}>
-          <button style={activeTab==="games"?S.bottomTabActive:S.bottomTab} onClick={()=>setActiveTab("games")}>
-            <span style={{fontSize:20}}>⚽</span>משחקים
-          </button>
-          <button style={activeTab==="players"?S.bottomTabActive:S.bottomTab} onClick={()=>setActiveTab("players")}>
-            <span style={{fontSize:20}}>👥</span>שחקנים
-          </button>
-        </nav>
       )}
     </main>
   );
@@ -2243,12 +2247,12 @@ const S = {
   iosHelpBox: { background:"#fff", borderRadius:14, padding:20, maxWidth:340, width:"100%" },
   errBar: { background:"#fee2e2", color:"#b91c1c", padding:"10px 14px", textAlign:"center", fontSize:13, fontWeight:700 },
   main: { padding:14, display:"flex", flexDirection:"column", gap:14 },
-  // ניווט תחתון קבוע (ר' שיחה עם המשתמש, בהשראת TeamPicker) — left:50%+
-  // translateX כדי להתיישר עם רוחב ה-app (maxWidth:640, ממורכז) במקום
-  // להימתח על כל רוחב המסך במסכים רחבים.
-  bottomTabBar: { position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:640, display:"flex", background:"#fff", borderTop:"1px solid #e2e8e2", boxShadow:"0 -2px 10px rgba(0,0,0,.08)", zIndex:20 },
-  bottomTab: { flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:2, padding:"8px 0 10px", background:"none", border:"none", fontSize:11, color:"#6b7280", cursor:"pointer", fontFamily:"inherit" },
-  bottomTabActive: { flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:2, padding:"8px 0 10px", background:"none", border:"none", fontSize:11, color:"#166534", fontWeight:800, cursor:"pointer", fontFamily:"inherit" },
+  // מעבר-טאבים רגיל בראש התוכן, לא position:fixed (ר' שיחה עם המשתמש —
+  // fixed/bottom:0 מכוסה בפועל ע"י סרגל הכלים של חלק מדפדפני המובייל,
+  // שחוטף את ההקשות לפני שהן מגיעות לכפתורים שלנו).
+  tabSwitcher: { display:"flex", gap:6, background:"#e2e8e2", padding:4, borderRadius:10 },
+  tabSwitcherBtn: { flex:1, padding:"9px 0", border:"none", borderRadius:8, background:"none", fontSize:14, fontWeight:700, color:"#4b5563", cursor:"pointer", fontFamily:"inherit" },
+  tabSwitcherBtnActive: { flex:1, padding:"9px 0", border:"none", borderRadius:8, background:"#166534", fontSize:14, fontWeight:800, color:"#fff", cursor:"pointer", fontFamily:"inherit" },
   card: { background:"#fff", borderRadius:14, padding:16, boxShadow:"0 1px 3px rgba(0,0,0,.06)" },
   cardHot: { outline:"2px solid #f59e0b" },
   roleBar: { display:"flex", justifyContent:"space-between", alignItems:"center", background:"#166534", color:"#fff", borderRadius:12, padding:"10px 14px" },

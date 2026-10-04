@@ -398,19 +398,27 @@ end; $$;
 -- וייחודי (guest_<uuid>) מאוחסן בעמודת player_id הרגילה, כך ש-
 -- admin_remove_registration/admin_set_attendance/admin_set_registration_ts
 -- הקיימות (מעל) ממשיכות לעבוד עליו בלי שום שינוי.
+-- input_grade אופציונלי (ר' migrations/0015) — דירוג לחלוקת כוחות למשחק
+-- הזה בלבד. player_grades.player_id בלי FK ל-players (כמו registrations),
+-- אז אפשר לשמור שורת דירוג גם לאורח, עם אותו player_id סינתטי בדיוק.
 create or replace function admin_add_guest_registration(
   input_game_id text, input_guest_name text,
-  input_pw text default null, input_phone text default null, input_pin text default null
+  input_pw text default null, input_phone text default null, input_pin text default null,
+  input_grade integer default null
 ) returns text language plpgsql security definer as $$
 declare v_role text; v_name text; v_guest_id text;
 begin
   v_role := require_admin(input_pw, input_phone, input_pin);
   v_name := trim(input_guest_name);
   if v_name = '' then raise exception 'empty_guest_name'; end if;
+  if input_grade is not null and (input_grade < 1 or input_grade > 99) then raise exception 'grade_out_of_range'; end if;
   v_guest_id := 'guest_' || replace(gen_random_uuid()::text, '-', '');
   insert into registrations (game_id, player_id, guest_name, ts)
     values (input_game_id, v_guest_id, v_name, (extract(epoch from now())*1000)::bigint);
-  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_add_guest_registration', jsonb_build_object('game_id', input_game_id, 'guest_name', v_name, 'player_id', v_guest_id));
+  if input_grade is not null then
+    insert into player_grades (player_id, grade) values (v_guest_id, input_grade);
+  end if;
+  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_add_guest_registration', jsonb_build_object('game_id', input_game_id, 'guest_name', v_name, 'player_id', v_guest_id, 'grade', input_grade));
   return v_guest_id;
 end; $$;
 

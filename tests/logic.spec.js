@@ -149,14 +149,44 @@ test("splitTeamsByGrade: גדלי הקבוצות תקינים (אי-זוגי —
 });
 
 test("splitTeamsByGrade: מוצא חלוקה מאוזנת מושלמת כשהיא קיימת", () => {
-  // 10+40=50 מול 20+30=50 — הפרש 0 אמור להימצא כמעט תמיד תוך 200 ניסיונות
+  // 10+40=50 מול 20+30=50 — הפרש 0 ודאי (לא "כמעט תמיד") כי האלגוריתם מדויק (DP), לא רנדומלי
   const players = [
     { id: "a", grade: 10 }, { id: "b", grade: 20 },
     { id: "c", grade: 30 }, { id: "d", grade: 40 },
   ];
-  const { team1, team2 } = splitTeamsByGrade(players, 200);
+  const { team1, team2 } = splitTeamsByGrade(players);
   const sum = (t) => t.reduce((s,p)=>s+p.grade, 0);
   assert.equal(Math.abs(sum(team1) - sum(team2)), 0);
+});
+
+test("splitTeamsByGrade: תמיד מוצא את ההפרש האופטימלי המתמטי (מול ברוטפורס)", () => {
+  // משווה את התוצאה של האלגוריתם (DP) מול בדיקה ממצה של כל החלוקות האפשריות
+  // בגודל קבוע — מוודא שהאלגוריתם לא רק "טוב" אלא באמת אופטימלי, לא היוריסטי.
+  function bruteForceMinDiff(players) {
+    const n = players.length, size1 = Math.ceil(n / 2);
+    const grades = players.map(p => p.grade);
+    let best = Infinity;
+    const total = grades.reduce((s, g) => s + g, 0);
+    const combo = (start, chosen, sum) => {
+      if (chosen.length === size1) {
+        best = Math.min(best, Math.abs(total - 2 * sum));
+        return;
+      }
+      if (start >= n) return;
+      combo(start + 1, [...chosen, start], sum + grades[start]);
+      combo(start + 1, chosen, sum);
+    };
+    combo(0, [], 0);
+    return best;
+  }
+  for (let trial = 0; trial < 8; trial++) {
+    const n = 6 + (trial % 5); // 6..10 שחקנים
+    const players = Array.from({ length: n }, (_, i) => ({ id: "p" + i, grade: 1 + Math.floor(Math.random() * 99) }));
+    const { team1, team2 } = splitTeamsByGrade(players);
+    const sum = (t) => t.reduce((s, p) => s + p.grade, 0);
+    const actualDiff = Math.abs(sum(team1) - sum(team2));
+    assert.equal(actualDiff, bruteForceMinDiff(players), "n="+n+" grades="+JSON.stringify(players.map(p=>p.grade)));
+  }
 });
 
 test("splitTeamsByGrade: לא מאבד ולא משכפל שחקנים", () => {

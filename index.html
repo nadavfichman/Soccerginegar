@@ -866,7 +866,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
           <PendingRequests {...{ pending, roster, refresh, cred }} />
         </>
       )}
-      <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades }} />
+      <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />
       {isSuper && <AdminRoster {...{ roster, admins, refresh, cred, attendanceCounts, grades, refreshGrades }} />}
     </main>
   );
@@ -1359,7 +1359,7 @@ function PendingRequestRow({ req, onApprove, onReject }) {
   );
 }
 
-function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grades }) {
+function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }) {
   const [showNew,setShowNew]=useState(false);
   const [showOld,setShowOld]=useState(false);
   const addGame = async (g) => {
@@ -1381,7 +1381,7 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grade
       </div>
       {showNew && <NewGameForm onAdd={addGame} />}
       {activeGames.map(g=>(
-        <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} />
+        <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} refreshGrades={refreshGrades} />
       ))}
       {oldGames.length>0 && (
         <>
@@ -1389,7 +1389,7 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grade
             משחקים קודמים ונעולים ({oldGames.length}) {showOld?"▲":"▼"}
           </button>
           {showOld && oldGames.map(g=>(
-            <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} />
+            <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} refreshGrades={refreshGrades} />
           ))}
         </>
       )}
@@ -1420,13 +1420,14 @@ function NewGameForm({ onAdd }) {
   );
 }
 
-function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grades }) {
+function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }) {
   const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts,attended:r.attended,guest_name:r.guestName})), roster, attendanceCounts);
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
   const displayName = r => r.guest_name ? (r.guest_name+" (אורח)") : nameOf(r.player_id);
   const [addId,setAddId]=useState("");
   const [guestName,setGuestName]=useState("");
+  const [guestGrade,setGuestGrade]=useState("");
   const [copiedMsg,setCopiedMsg]=useState("");
   const [editingKickoff,setEditingKickoff]=useState(false);
   const [newKickoff,setNewKickoff]=useState("");
@@ -1458,12 +1459,16 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
     setAddId(""); await refresh();
   };
   // אורח חד-פעמי — לא נוצרת עבורו שורה ב-players, רק שורת הרשמה למשחק הזה
-  // בלבד (ר' admin_add_guest_registration, migrations/0008)
+  // בלבד (ר' admin_add_guest_registration, migrations/0008). דירוג אופציונלי
+  // (ר' migrations/0015) — בלי זה הוא יקבל 50 ברירת מחדל בפאנל החלוקה, כמו
+  // כל אחד אחר שלא דורג; שדה ריק/לא תקין = לא נשלח דירוג בכלל (null).
   const addGuest = async () => {
     const n = guestName.trim();
     if (!n) return;
-    await callAdmin("admin_add_guest_registration", { input_game_id: game.id, input_guest_name: n, ...credArgs });
-    setGuestName(""); await refresh();
+    const g = parseInt(guestGrade, 10);
+    const inputGrade = (guestGrade.trim() !== "" && Number.isFinite(g) && g >= 1 && g <= 99) ? g : null;
+    await callAdmin("admin_add_guest_registration", { input_game_id: game.id, input_guest_name: n, input_grade: inputGrade, ...credArgs });
+    setGuestName(""); setGuestGrade(""); await refresh(); await refreshGrades();
   };
   const deleteGame = async () => {
     if (!window.confirm("למחוק את המשחק " + dayName(game.kickoff) + " " + dateOnly(game.kickoff) + "? הפעולה תמחק גם את כל ההרשמות שלו, ולא ניתנת לביטול.")) return;
@@ -1753,6 +1758,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
       </div>
       <div style={S.addRow}>
         <input style={S.selectSm} placeholder="שם אורח…" value={guestName} onChange={e=>setGuestName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addGuest()} />
+        <input style={{...S.input,width:56,padding:6}} type="number" min="1" max="99" placeholder="50" value={guestGrade} onChange={e=>setGuestGrade(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addGuest()} title="דירוג לאורח (אופציונלי, לחלוקת כוחות)" />
         <button className="btn small" onClick={addGuest} disabled={!guestName.trim()}>+ הוסף אורח</button>
       </div>
       <div style={game.attendanceLocked?S.pubBarOn:S.pubBar}>

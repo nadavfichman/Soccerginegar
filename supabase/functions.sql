@@ -369,6 +369,47 @@ begin
   return query select gt.player_id, gt.team from game_teams gt where gt.game_id = input_game_id;
 end; $$;
 
+-- תיעוד תוצאות משחק (ר' migrations/0016) — צעד ראשון לקראת שלב C
+-- (כימיה/אחוזי-ניצחון), לא תלוי בייבוא היסטוריה מ-TeamPicker. דורש
+-- שחלוקת קבוצות כבר נשמרה לאותו משחק (אכיפה בצד השרת).
+create or replace function admin_set_game_result(input_game_id text, input_team1_score integer, input_team2_score integer, input_pw text, input_phone text, input_pin text)
+returns boolean language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  if not exists (select 1 from game_teams where game_id = input_game_id) then raise exception 'teams_not_saved'; end if;
+  if input_team1_score < 0 or input_team2_score < 0 then raise exception 'invalid_score'; end if;
+  insert into game_results (game_id, team1_score, team2_score, recorded_at) values (input_game_id, input_team1_score, input_team2_score, now())
+    on conflict (game_id) do update set team1_score = excluded.team1_score, team2_score = excluded.team2_score, recorded_at = now();
+  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_set_game_result', jsonb_build_object('game_id', input_game_id, 'team1_score', input_team1_score, 'team2_score', input_team2_score));
+  return true;
+end; $$;
+
+create or replace function admin_get_game_result(input_game_id text, input_pw text, input_phone text, input_pin text)
+returns table(team1_score integer, team2_score integer) language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  return query select gr.team1_score, gr.team2_score from game_results gr where gr.game_id = input_game_id;
+end; $$;
+
+-- כל התוצאות בעסקה אחת, כולל תאריך וספירת שחקנים לכל קבוצה — לרשימת
+-- "היסטוריית תוצאות" (AdminGames).
+create or replace function admin_get_all_game_results(input_pw text, input_phone text, input_pin text)
+returns table(game_id text, team1_score integer, team2_score integer, team1_count bigint, team2_count bigint, kickoff bigint)
+language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  return query
+    select gr.game_id, gr.team1_score, gr.team2_score,
+      (select count(*) from game_teams gt where gt.game_id = gr.game_id and gt.team = 1),
+      (select count(*) from game_teams gt where gt.game_id = gr.game_id and gt.team = 2),
+      g.kickoff
+    from game_results gr join games g on g.id = gr.game_id
+    order by g.kickoff desc;
+end; $$;
+
 -- הוחלפו (drop + create) כי היו קיימות קודם עם 2 פרמטרים בלבד, בלי אימות הרשאה כלל
 drop function if exists admin_add_registration(text, text);
 create or replace function admin_add_registration(

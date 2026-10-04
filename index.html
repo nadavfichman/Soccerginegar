@@ -1362,9 +1362,25 @@ function PendingRequestRow({ req, onApprove, onReject }) {
 function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }) {
   const [showNew,setShowNew]=useState(false);
   const [showOld,setShowOld]=useState(false);
+  const [showHistory,setShowHistory]=useState(false);
+  const [resultsHistory,setResultsHistory]=useState(null); // null = טרם נטען
+  const [historyLoading,setHistoryLoading]=useState(false);
   const addGame = async (g) => {
     await callAdmin("admin_create_game", { input_kickoff: g.kickoff, input_opens_at: g.opensAt, input_visible_to_primary: g.visiblePrimary, input_visible_to_secondary: g.visibleSecondary, input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
     setShowNew(false); await refresh();
+  };
+  // רשימת היסטוריית תוצאות (ר' migrations/0016) — טעינה עצלה בלחיצה, לא
+  // אוטומטית (כמו ClientErrorLog), כדי לא להעמיס בקשה מיותרת בכל טעינת
+  // מסך אדמין.
+  const toggleHistory = async () => {
+    if (showHistory) { setShowHistory(false); return; }
+    setShowHistory(true);
+    if (resultsHistory === null) {
+      setHistoryLoading(true);
+      const rows = await callAdmin("admin_get_all_game_results", { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
+      setHistoryLoading(false);
+      setResultsHistory(rows || []);
+    }
   };
   const sorted = [...games].sort((a,b)=>a.kickoff-b.kickoff);
   // משחקים נעולים (נוכחות סופית, "היסטוריה") מתקפלים כברירת מחדל — לא
@@ -1392,6 +1408,28 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grade
             <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} refreshGrades={refreshGrades} />
           ))}
         </>
+      )}
+      <button className="btn small" style={{marginTop:10,width:"100%"}} onClick={toggleHistory}>
+        📜 היסטוריית תוצאות {showHistory?"▲":"▼"}
+      </button>
+      {showHistory && historyLoading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
+      {showHistory && !historyLoading && resultsHistory && (
+        resultsHistory.length === 0 ? (
+          <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>אין עדיין תוצאות מתועדות</div>
+        ) : resultsHistory.map(r => {
+          const dotColor = r.team1_score > r.team2_score ? "#f97316" : r.team2_score > r.team1_score ? "#3b82f6" : "#9ca3af";
+          const count = Number(r.team1_count) + Number(r.team2_count);
+          return (
+            <div key={r.game_id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 4px",borderBottom:"1px solid #eee"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{display:"inline-block",width:10,height:10,borderRadius:"50%",background:dotColor}}></span>
+                <b>{r.team1_score} - {r.team2_score}</b>
+                <span style={S.subLine}>{count} שחקנים</span>
+              </div>
+              <span style={S.subLine}>{dateOnly(r.kickoff)}</span>
+            </div>
+          );
+        })
       )}
     </section>
   );
@@ -1436,6 +1474,9 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   const [teamSplit,setTeamSplit]=useState(null); // {team1:[{id,name,grade}], team2:[...]}
   const [teamsLoading,setTeamsLoading]=useState(false);
   const [sharingTeams,setSharingTeams]=useState(false);
+  const [gameResult,setGameResult]=useState(null); // {team1Score,team2Score} | null — ר' migrations/0016
+  const [score1,setScore1]=useState(""); const [score2,setScore2]=useState("");
+  const [savingResult,setSavingResult]=useState(false);
   const teamCardRef = useRef(null);
   const isOpen = now >= game.opensAt;
   const hasHappened = now >= game.kickoff;
@@ -1571,7 +1612,12 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   const openTeamSplit = async () => {
     setShowTeamSplit(true);
     setTeamsLoading(true);
-    const saved = await callAdmin("admin_get_game_teams", { input_game_id: game.id, ...credArgs });
+    // התוצאה (אם יש) נטענת יחד עם השיבוץ — אותה קריאת פתיחה, אותו מצב טעינה
+    // (ר' migrations/0016, admin_get_game_result)
+    const [saved, result] = await Promise.all([
+      callAdmin("admin_get_game_teams", { input_game_id: game.id, ...credArgs }),
+      callAdmin("admin_get_game_result", { input_game_id: game.id, ...credArgs }),
+    ]);
     setTeamsLoading(false);
     const savedRows = saved || [];
     if (savedRows.length > 0) {
@@ -1581,6 +1627,21 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
     } else {
       setTeamSplit(splitTeamsByGrade(eligibleForSplit));
     }
+    const resultRow = (result||[])[0];
+    if (resultRow) {
+      setGameResult(resultRow);
+      setScore1(String(resultRow.team1_score)); setScore2(String(resultRow.team2_score));
+    } else {
+      setGameResult(null); setScore1(""); setScore2("");
+    }
+  };
+  const saveResult = async () => {
+    const s1 = parseInt(score1,10), s2 = parseInt(score2,10);
+    if (!Number.isFinite(s1) || !Number.isFinite(s2) || s1<0 || s2<0) return;
+    setSavingResult(true);
+    const ok = await callAdmin("admin_set_game_result", { input_game_id: game.id, input_team1_score: s1, input_team2_score: s2, ...credArgs });
+    setSavingResult(false);
+    if (ok) setGameResult({ team1_score: s1, team2_score: s2 });
   };
   const reshuffleTeams = () => setTeamSplit(splitTeamsByGrade(eligibleForSplit));
   const swapPlayer = (id, fromTeam) => {
@@ -1695,6 +1756,23 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
             <button className="btn primary small" style={{flex:1}} onClick={saveTeamSplit}>💾 שמור חלוקה</button>
           </div>
           <button className="btn waBtn" style={{width:"100%",marginTop:6}} onClick={shareTeamsImage} disabled={sharingTeams}>{sharingTeams?"מכין תמונה…":"📤 שיתוף לוואטסאפ"}</button>
+          {hasHappened && (
+            <div style={{marginTop:10,paddingTop:10,borderTop:"1px dashed rgba(255,255,255,.4)"}}>
+              {gameResult && (
+                <div style={{textAlign:"center",color:"#fff",fontWeight:800,fontSize:15,marginBottom:6}}>
+                  <span style={{opacity:gameResult.team1_score>gameResult.team2_score?1:0.6}}>קבוצה 1: {gameResult.team1_score}</span>
+                  {"  —  "}
+                  <span style={{opacity:gameResult.team2_score>gameResult.team1_score?1:0.6}}>קבוצה 2: {gameResult.team2_score}</span>
+                </div>
+              )}
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <input style={{...S.input,width:50,padding:6,textAlign:"center"}} type="number" min="0" value={score1} onChange={e=>setScore1(e.target.value)} placeholder="0" />
+                <span style={{color:"#fff",fontWeight:700}}>:</span>
+                <input style={{...S.input,width:50,padding:6,textAlign:"center"}} type="number" min="0" value={score2} onChange={e=>setScore2(e.target.value)} placeholder="0" />
+                <button className="btn primary small" style={{flex:1}} onClick={saveResult} disabled={savingResult || score1===""||score2===""}>{savingResult?"שומר…":"💾 הזן תוצאות"}</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
       <div style={{display:"flex",gap:6,alignItems:"center",marginTop:8}}>

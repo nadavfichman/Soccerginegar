@@ -2195,7 +2195,11 @@ const S = {
   teamSwapHint: { opacity:0.55, fontSize:13, flexShrink:0 },
   teamSplitFooterRow: { display:"flex" },
   teamSplitFooter: { flex:1, textAlign:"center", fontWeight:800, fontSize:12, padding:"10px 4px" },
-  teamCardHidden: { position:"absolute", left:-9999, top:0, width:440, background:"#fff", fontFamily:"'Heebo',system-ui,sans-serif", direction:"rtl", borderRadius:18, overflow:"hidden", boxShadow:"0 4px 18px rgba(0,0,0,.12)" },
+  // position:fixed+transform (לא absolute+left שלילי) — באפליקציה RTL,
+  // left שלילי גדול יכול להרחיב את גלילת הדף כולו לאזור ריק (ר' שיחה עם
+  // המשתמש, המסך התרוקן אחרי שהכרטיס הזה סוף-סוף נרנדר לראשונה בפועל).
+  // fixed+transform לא משפיעים על גלילת המסמך בשום מצב, RTL או לא.
+  teamCardHidden: { position:"fixed", top:0, left:0, transform:"translateX(200%)", pointerEvents:"none", width:440, background:"#fff", fontFamily:"'Heebo',system-ui,sans-serif", direction:"rtl", borderRadius:18, overflow:"hidden", boxShadow:"0 4px 18px rgba(0,0,0,.12)" },
   teamCardHeader: { textAlign:"center", fontWeight:800, fontSize:17, color:"#166534", padding:"20px 10px", background:"#f2f6f0", lineHeight:1.7 },
   teamCardCols: { display:"flex" },
   teamCardCol: { flex:1, padding:"18px 16px", color:"#fff", fontWeight:700, fontSize:16 },

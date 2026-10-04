@@ -292,7 +292,7 @@ function App() {
     published: g.published, rosterPublished: g.roster_published, attendanceLocked: !!g.attendance_locked,
     visibleToPrimary: !!g.visible_to_primary, visibleToSecondary: !!g.visible_to_secondary,
     registrationClosed: !!g.registration_closed,
-    registrations: regs.filter(r => r.game_id === g.id).map(r => ({ playerId: r.player_id, ts: r.ts, attended: !!r.attended, guestName: r.guest_name || null, team: r.team || null })),
+    registrations: regs.filter(r => r.game_id === g.id).map(r => ({ playerId: r.player_id, ts: r.ts, attended: !!r.attended, guestName: r.guest_name || null })),
     declines: declines.filter(d => d.game_id === g.id).map(d => ({ playerId: d.player_id, ts: d.ts })),
   }));
 
@@ -786,6 +786,16 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
   const [pw,setPw]=useState(""); const [pin,setPin]=useState("");
   const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
   const [hint,setHint]=useState(null); // 'super' | 'admin' | null — רמז בלבד, לא מעניק הרשאה
+  // דירוגי שחקנים לחלוקת כוחות (ר' migrations/0014) — נשמרים בטבלה נעולה,
+  // בלי SELECT ציבורי, נטענים רק כאן דרך RPC אדמין אחרי התחברות מוצלחת.
+  const [grades,setGrades]=useState({});
+  const refreshGrades = async () => {
+    if (!cred) return;
+    const rows = await callAdmin("admin_get_player_grades", { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
+    const map = {};
+    (rows||[]).forEach(r => { map[r.player_id] = r.grade; });
+    setGrades(map);
+  };
 
   useEffect(() => {
     let alive = true;
@@ -796,6 +806,8 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
     }
     return () => { alive = false; };
   }, [myPhone, role]);
+
+  useEffect(() => { if (role) refreshGrades(); }, [role]);
 
   if (!role) {
     const tryLoginPw = async () => {
@@ -854,8 +866,8 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
           <PendingRequests {...{ pending, roster, refresh, cred }} />
         </>
       )}
-      <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts }} />
-      {isSuper && <AdminRoster {...{ roster, admins, refresh, cred, attendanceCounts }} />}
+      <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades }} />
+      {isSuper && <AdminRoster {...{ roster, admins, refresh, cred, attendanceCounts, grades, refreshGrades }} />}
     </main>
   );
 }
@@ -1347,7 +1359,7 @@ function PendingRequestRow({ req, onApprove, onReject }) {
   );
 }
 
-function AdminGames({ games, roster, now, refresh, cred, attendanceCounts }) {
+function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grades }) {
   const [showNew,setShowNew]=useState(false);
   const [showOld,setShowOld]=useState(false);
   const addGame = async (g) => {
@@ -1369,7 +1381,7 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts }) {
       </div>
       {showNew && <NewGameForm onAdd={addGame} />}
       {activeGames.map(g=>(
-        <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} />
+        <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} />
       ))}
       {oldGames.length>0 && (
         <>
@@ -1377,7 +1389,7 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts }) {
             משחקים קודמים ונעולים ({oldGames.length}) {showOld?"▲":"▼"}
           </button>
           {showOld && oldGames.map(g=>(
-            <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} />
+            <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} />
           ))}
         </>
       )}
@@ -1408,8 +1420,8 @@ function NewGameForm({ onAdd }) {
   );
 }
 
-function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
-  const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts,attended:r.attended,guest_name:r.guestName,team:r.team})), roster, attendanceCounts);
+function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grades }) {
+  const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts,attended:r.attended,guest_name:r.guestName})), roster, attendanceCounts);
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
   const displayName = r => r.guest_name ? (r.guest_name+" (אורח)") : nameOf(r.player_id);
@@ -1421,6 +1433,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
   const [showSecondarySend,setShowSecondarySend]=useState(false);
   const [showTeamSplit,setShowTeamSplit]=useState(false);
   const [teamSplit,setTeamSplit]=useState(null); // {team1:[{id,name,grade}], team2:[...]}
+  const [teamsLoading,setTeamsLoading]=useState(false);
   const [sharingTeams,setSharingTeams]=useState(false);
   const teamCardRef = useRef(null);
   const isOpen = now >= game.opensAt;
@@ -1544,18 +1557,22 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
   // (אלה שלב עתידי, תלוי בייבוא נתונים אמיתי מאפליקציה חיצונית). פועלת
   // רק על main (לא waitlist) — אורחים ושחקנים בלי דירוג מפורש מקבלים 50
   // (ברירת המחדל הניטרלית, זהה לערך שה-RPC דוחף לשחקן חדש).
-  const eligibleForSplit = main.map(r => ({ id: r.player_id, name: displayName(r), grade: (roster.find(p=>p.id===r.player_id)||{}).grade || 50 }));
-  const openTeamSplit = () => {
-    const hasSaved = main.some(r => r.team === 1 || r.team === 2);
-    if (hasSaved) {
-      const byId = id => eligibleForSplit.find(e=>e.id===id);
-      const team1 = main.filter(r=>r.team===1).map(r=>byId(r.player_id)).filter(Boolean);
-      const team2 = main.filter(r=>r.team!==1).map(r=>byId(r.player_id)).filter(Boolean);
-      setTeamSplit({ team1, team2 });
+  const eligibleForSplit = main.map(r => ({ id: r.player_id, name: displayName(r), grade: grades[r.player_id] || 50 }));
+  // השיבוץ השמור (אם יש) חי בטבלה נעולה (game_teams, ר' migrations/0014)
+  // ולכן נטען רק כאן, בפתיחה, דרך RPC אדמין — לא מגיע עם שאר נתוני המשחק.
+  const openTeamSplit = async () => {
+    setShowTeamSplit(true);
+    setTeamsLoading(true);
+    const saved = await callAdmin("admin_get_game_teams", { input_game_id: game.id, ...credArgs });
+    setTeamsLoading(false);
+    const savedRows = saved || [];
+    if (savedRows.length > 0) {
+      const team1Ids = new Set(savedRows.filter(r=>r.team===1).map(r=>r.player_id));
+      const team2Ids = new Set(savedRows.filter(r=>r.team===2).map(r=>r.player_id));
+      setTeamSplit({ team1: eligibleForSplit.filter(e=>team1Ids.has(e.id)), team2: eligibleForSplit.filter(e=>team2Ids.has(e.id)) });
     } else {
       setTeamSplit(splitTeamsByGrade(eligibleForSplit));
     }
-    setShowTeamSplit(true);
   };
   const reshuffleTeams = () => setTeamSplit(splitTeamsByGrade(eligibleForSplit));
   const swapPlayer = (id, fromTeam) => {
@@ -1638,7 +1655,8 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
       <button className="btn primary" style={{width:"100%",marginTop:8,padding:12,fontSize:15}} onClick={()=> showTeamSplit ? setShowTeamSplit(false) : openTeamSplit()} disabled={main.length<2}>
         ⚽ הכן כוחות למשחק {showTeamSplit?"▲":"▼"}
       </button>
-      {showTeamSplit && teamSplit && (
+      {showTeamSplit && teamsLoading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
+      {showTeamSplit && !teamsLoading && teamSplit && (
         <div style={S.teamSplitPanel}>
           <div style={S.teamSplitCols}>
             <div style={{...S.teamCol,background:"#3b82f6"}}>
@@ -1772,7 +1790,7 @@ function EditableRow({ i, name, onUp, onDown, onRemove, wait, attended, onToggle
   );
 }
 
-function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
+function AdminRoster({ roster, admins, refresh, cred, attendanceCounts, grades, refreshGrades }) {
   const [search,setSearch]=useState("");
   const [name,setName]=useState(""); const [phone,setPhone]=useState("");
   const [newGanigari,setNewGanigari]=useState(false); const [newVatik,setNewVatik]=useState(false);
@@ -1806,7 +1824,7 @@ function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
     const g = parseInt(newGradeRaw, 10);
     if (!Number.isFinite(g) || g < 1 || g > 99) { otherErrSetter("דירוג חייב להיות מספר בין 1 ל-99"); return false; }
     await callAdmin("admin_set_player_grade", { input_player_id: id, input_grade: g, input_pw: cred.pw });
-    await refresh();
+    await refreshGrades();
     return true;
   };
   const remove = async (id, name) => {
@@ -1944,7 +1962,7 @@ function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
                   <option value="secondary">קבוצה משנית</option>
                 </select>
               </div>
-              <GradeEditor player={p} onSave={setGrade} />
+              <GradeEditor player={p} grade={grades[p.id] ?? 50} onSave={setGrade} />
             </div>
           );
         })}
@@ -2041,18 +2059,20 @@ function EmailEditor({ player, onSave }) {
   );
 }
 
-// עריכת דירוג שחקן לחלוקת כוחות (ר' migrations/0013, שלב A) — נראה רק
-// באדמין, לא נחשף לשחקנים בשום מקום (ר' AdminGameRow, פאנל החלוקה).
-function GradeEditor({ player, onSave }) {
+// עריכת דירוג שחקן לחלוקת כוחות (ר' migrations/0013/0014) — נראה רק
+// באדמין, לא נחשף לשחקנים בשום מקום (ר' AdminGameRow, פאנל החלוקה). הערך
+// מגיע כ-prop נפרד (grade) כי מ-0014 הוא כבר לא חלק מ-player (שנטען
+// פומבית) — נטען בנפרד דרך admin_get_player_grades (ר' AdminView).
+function GradeEditor({ player, grade, onSave }) {
   const [editing,setEditing]=useState(false);
-  const [val,setVal]=useState(player.grade);
+  const [val,setVal]=useState(grade);
   const [err,setErr]=useState("");
 
   if (!editing) {
     return (
       <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
-        <div style={S.subLine}>דירוג: {player.grade}</div>
-        <span style={{...S.linkText,fontSize:12}} onClick={()=>{setVal(player.grade); setErr(""); setEditing(true);}}>שנה דירוג</span>
+        <div style={S.subLine}>דירוג: {grade}</div>
+        <span style={{...S.linkText,fontSize:12}} onClick={()=>{setVal(grade); setErr(""); setEditing(true);}}>שנה דירוג</span>
       </div>
     );
   }

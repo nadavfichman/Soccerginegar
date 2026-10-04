@@ -150,6 +150,9 @@ end; $$;
 -- דירוג מספרי לחלוקת כוחות (ר' migrations/0013, שלב A) — מוזן/נערך ידנית
 -- בלבד, לא מתעדכן אוטומטית לפי תוצאות (אין עדיין היסטוריית תוצאות
 -- ב-Soccerginegar). קלט לאלגוריתם splitTeamsByGrade (logic.js).
+-- מ-migration 0014: נשמר בטבלה נפרדת ונעולה (player_grades, בלי policy
+-- ציבורי, ר' policies.sql) — לא בעמודה על players הפתוחה ל-SELECT ציבורי
+-- — כי "אסור ששחקן יראה ציונים, גלוי רק לאדמין" (ר' שיחה עם המשתמש).
 create or replace function admin_set_player_grade(input_player_id text, input_grade integer, input_pw text)
 returns boolean language plpgsql security definer as $$
 declare v_role text;
@@ -157,9 +160,21 @@ begin
   v_role := require_admin(input_pw, null, null);
   if v_role <> 'super' then raise exception 'not_authorized'; end if;
   if input_grade < 1 or input_grade > 99 then raise exception 'grade_out_of_range'; end if;
-  update players set grade = input_grade where id = input_player_id;
+  insert into player_grades (player_id, grade) values (input_player_id, input_grade)
+    on conflict (player_id) do update set grade = excluded.grade;
   perform log_admin_action('super', 'super', 'admin_set_player_grade', jsonb_build_object('player_id', input_player_id, 'grade', input_grade));
   return true;
+end; $$;
+
+-- קריאת כל הדירוגים (ר' migrations/0014) — אדמין רגיל *או* על, כי חלוקת
+-- כוחות (AdminGameRow) היא "ניהול משחק" ולא "ניהול שחקן" (בניגוד לכתיבה
+-- למעלה, שנשארת super-בלבד — עריכת דירוג בסיס לשחקן).
+create or replace function admin_get_player_grades(input_pw text, input_phone text, input_pin text)
+returns table(player_id text, grade integer) language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  return query select pg.player_id, pg.grade from player_grades pg;
 end; $$;
 
 -- שיוך קבוצה לשחקן (ר' migrations/0009) — קובע אילו משחקים בכלל מוצגים
@@ -325,18 +340,33 @@ begin
 end; $$;
 
 -- שומר חלוקה לקבוצות (חלוקת כוחות, ר' migrations/0013 שלב A) בעסקה אחת —
--- מאפס team לכולם במשחק קודם, ואז משבץ לפי שתי רשימות ה-id. מי שלא
--- ברשימה (ספסל) נשאר null.
+-- מאפס את כל השיבוצים הקיימים למשחק הזה, ואז משבץ לפי שתי רשימות ה-id.
+-- מי שלא ברשימה (ספסל) נשאר בלי שורה בכלל.
+-- מ-migration 0014: נשמר בטבלה נפרדת ונעולה (game_teams, בלי policy
+-- ציבורי) במקום בעמודת registrations.team הפתוחה ל-SELECT ציבורי — אותה
+-- סיבה בדיוק כמו player_grades למעלה.
 create or replace function admin_set_game_teams(input_game_id text, input_team1_ids text[], input_team2_ids text[], input_pw text, input_phone text, input_pin text)
 returns boolean language plpgsql security definer as $$
 declare v_role text;
 begin
   v_role := require_admin(input_pw, input_phone, input_pin);
-  update registrations set team = null where game_id = input_game_id;
-  update registrations set team = 1 where game_id = input_game_id and player_id = any(input_team1_ids);
-  update registrations set team = 2 where game_id = input_game_id and player_id = any(input_team2_ids);
+  delete from game_teams where game_id = input_game_id;
+  insert into game_teams (game_id, player_id, team)
+    select input_game_id, pid, 1 from unnest(input_team1_ids) as pid
+    union all
+    select input_game_id, pid, 2 from unnest(input_team2_ids) as pid;
   perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_set_game_teams', jsonb_build_object('game_id', input_game_id, 'team1_count', coalesce(array_length(input_team1_ids,1),0), 'team2_count', coalesce(array_length(input_team2_ids,1),0)));
   return true;
+end; $$;
+
+-- קריאת השיבוץ השמור למשחק ספציפי (ר' migrations/0014) — אותה רמת
+-- הרשאה בדיוק כמו הכתיבה למעלה (ניהול משחק, לא ניהול שחקן).
+create or replace function admin_get_game_teams(input_game_id text, input_pw text, input_phone text, input_pin text)
+returns table(player_id text, team smallint) language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  return query select gt.player_id, gt.team from game_teams gt where gt.game_id = input_game_id;
 end; $$;
 
 -- הוחלפו (drop + create) כי היו קיימות קודם עם 2 פרמטרים בלבד, בלי אימות הרשאה כלל

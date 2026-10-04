@@ -1557,7 +1557,10 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   // (אלה שלב עתידי, תלוי בייבוא נתונים אמיתי מאפליקציה חיצונית). פועלת
   // רק על main (לא waitlist) — אורחים ושחקנים בלי דירוג מפורש מקבלים 50
   // (ברירת המחדל הניטרלית, זהה לערך שה-RPC דוחף לשחקן חדש).
-  const eligibleForSplit = main.map(r => ({ id: r.player_id, name: displayName(r), grade: grades[r.player_id] || 50 }));
+  // שם רגיל, בלי "(אורח)" — התיוג הזה שימושי ברשימת המשתתפים הרגילה
+  // (displayName) אבל מיותר כאן: בפאנל החלוקה ובכרטיס השיתוף זה פרטי
+  // מידע לאדמין בלבד, לא רלוונטי מי אורח ומי לא (ר' שיחה עם המשתמש).
+  const eligibleForSplit = main.map(r => ({ id: r.player_id, name: r.guest_name || nameOf(r.player_id), grade: grades[r.player_id] || 50 }));
   // השיבוץ השמור (אם יש) חי בטבלה נעולה (game_teams, ר' migrations/0014)
   // ולכן נטען רק כאן, בפתיחה, דרך RPC אדמין — לא מגיע עם שאר נתוני המשחק.
   const openTeamSplit = async () => {

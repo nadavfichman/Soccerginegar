@@ -81,9 +81,39 @@
     });
   }
 
+  // ==== חלוקת כוחות ====
+  // גרסה מפושטת (בלי פילוח תפקידים — שוער/בלם וכו', לא קיים ב-Soccerginegar)
+  // של עקרון ה-Monte Carlo שבבסיס DividerBase/DivideByGrade של TeamPicker
+  // (אפליקציית חלוקת-כוחות נפרדת, ר' שיחה עם המשתמש): מנסים N חלוקות
+  // אקראיות, שומרים את זו עם הפרש-סכום-הדירוגים הקטן ביותר בין שתי
+  // הקבוצות. בכוונה בלי "דליים" לפי תפקיד — שלב A בלבד.
+  function shuffleArray(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  function sumGrade(players) { return players.reduce((s, p) => s + (p.grade || 0), 0); }
+  function splitTeamsByGrade(players, attempts) {
+    attempts = attempts || 200;
+    if (!players || players.length === 0) return { team1: [], team2: [] };
+    let best = null, bestDiff = Infinity;
+    for (let i = 0; i < attempts; i++) {
+      const shuffled = shuffleArray(players);
+      const half = Math.ceil(shuffled.length / 2);
+      const team1 = shuffled.slice(0, half), team2 = shuffled.slice(half);
+      const diff = Math.abs(sumGrade(team1) - sumGrade(team2));
+      if (diff < bestDiff) { bestDiff = diff; best = { team1, team2 }; }
+      if (bestDiff === 0) break;
+    }
+    return best;
+  }
+
   return {
     fmt, fmtDateTime, fmtTime, dateOnly, dayName, countdown,
     normPhone, validName, normName, validPhone, normEmail, validEmail, sameEmail,
-    findDuplicate, tierRank, sortRegs,
+    findDuplicate, tierRank, sortRegs, splitTeamsByGrade,
   };
 }));

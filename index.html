@@ -17,6 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="logic.js"></script>
 <style>
   * { box-sizing: border-box; }
@@ -291,7 +292,7 @@ function App() {
     published: g.published, rosterPublished: g.roster_published, attendanceLocked: !!g.attendance_locked,
     visibleToPrimary: !!g.visible_to_primary, visibleToSecondary: !!g.visible_to_secondary,
     registrationClosed: !!g.registration_closed,
-    registrations: regs.filter(r => r.game_id === g.id).map(r => ({ playerId: r.player_id, ts: r.ts, attended: !!r.attended, guestName: r.guest_name || null })),
+    registrations: regs.filter(r => r.game_id === g.id).map(r => ({ playerId: r.player_id, ts: r.ts, attended: !!r.attended, guestName: r.guest_name || null, team: r.team || null })),
     declines: declines.filter(d => d.game_id === g.id).map(d => ({ playerId: d.player_id, ts: d.ts })),
   }));
 
@@ -1408,7 +1409,7 @@ function NewGameForm({ onAdd }) {
 }
 
 function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
-  const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts,attended:r.attended,guest_name:r.guestName})), roster, attendanceCounts);
+  const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts,attended:r.attended,guest_name:r.guestName,team:r.team})), roster, attendanceCounts);
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
   const displayName = r => r.guest_name ? (r.guest_name+" (אורח)") : nameOf(r.player_id);
@@ -1418,6 +1419,10 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
   const [editingKickoff,setEditingKickoff]=useState(false);
   const [newKickoff,setNewKickoff]=useState("");
   const [showSecondarySend,setShowSecondarySend]=useState(false);
+  const [showTeamSplit,setShowTeamSplit]=useState(false);
+  const [teamSplit,setTeamSplit]=useState(null); // {team1:[{id,name,grade}], team2:[...]}
+  const [sharingTeams,setSharingTeams]=useState(false);
+  const teamCardRef = useRef(null);
   const isOpen = now >= game.opensAt;
   const hasHappened = now >= game.kickoff;
   const credArgs = { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null };
@@ -1535,6 +1540,74 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
     setTimeout(()=>setCopiedMsg(""), 2500);
   };
 
+  // חלוקת כוחות (ר' migrations/0013, שלב A) — דירוג בלבד, בלי כימיה/היסטוריה
+  // (אלה שלב עתידי, תלוי בייבוא נתונים אמיתי מאפליקציה חיצונית). פועלת
+  // רק על main (לא waitlist) — אורחים ושחקנים בלי דירוג מפורש מקבלים 50
+  // (ברירת המחדל הניטרלית, זהה לערך שה-RPC דוחף לשחקן חדש).
+  const eligibleForSplit = main.map(r => ({ id: r.player_id, name: displayName(r), grade: (roster.find(p=>p.id===r.player_id)||{}).grade || 50 }));
+  const openTeamSplit = () => {
+    const hasSaved = main.some(r => r.team === 1 || r.team === 2);
+    if (hasSaved) {
+      const byId = id => eligibleForSplit.find(e=>e.id===id);
+      const team1 = main.filter(r=>r.team===1).map(r=>byId(r.player_id)).filter(Boolean);
+      const team2 = main.filter(r=>r.team!==1).map(r=>byId(r.player_id)).filter(Boolean);
+      setTeamSplit({ team1, team2 });
+    } else {
+      setTeamSplit(splitTeamsByGrade(eligibleForSplit));
+    }
+    setShowTeamSplit(true);
+  };
+  const reshuffleTeams = () => setTeamSplit(splitTeamsByGrade(eligibleForSplit));
+  const swapPlayer = (id, fromTeam) => {
+    setTeamSplit(prev => {
+      if (!prev) return prev;
+      if (fromTeam === 1) {
+        const player = prev.team1.find(p=>p.id===id);
+        return { team1: prev.team1.filter(p=>p.id!==id), team2: [...prev.team2, player] };
+      }
+      const player = prev.team2.find(p=>p.id===id);
+      return { team1: [...prev.team1, player], team2: prev.team2.filter(p=>p.id!==id) };
+    });
+  };
+  const saveTeamSplit = async () => {
+    if (!teamSplit) return;
+    await callAdmin("admin_set_game_teams", { input_game_id: game.id, input_team1_ids: teamSplit.team1.map(p=>p.id), input_team2_ids: teamSplit.team2.map(p=>p.id), ...credArgs });
+    await refresh();
+  };
+
+  // שיתוף תמונה (לא טקסט) של החלוקה, בלי שום ציון/דירוג — זה גלוי רק
+  // באפליקציה לעיני האדמין (ר' teamCardRef, הכרטיס המוסתר למטה). מצלם
+  // את הכרטיס ל-PNG (html2canvas), ומשתף אותו דרך Web Share API (עם
+  // קבצים — נתמך היטב בדפדפני מובייל). בלי תמיכה — נופל חזרה להורדת
+  // הקובץ + הנחיה לצרף ידנית, אותה רוח כמו ה-fallback של copyWaLog.
+  const downloadTeamCard = (blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "חלוקת-כוחות.png"; a.click();
+    URL.revokeObjectURL(url);
+    window.alert("התמונה הורדה — אפשר לצרף אותה ידנית בוואטסאפ.");
+  };
+  const shareTeamsImage = async () => {
+    if (!teamSplit || !teamCardRef.current || typeof html2canvas === "undefined") return;
+    setSharingTeams(true);
+    try {
+      const canvas = await html2canvas(teamCardRef.current, { backgroundColor: "#ffffff", scale: 2 });
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+      if (!blob) { setSharingTeams(false); return; }
+      const file = new File([blob], "חלוקת-כוחות.png", { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: "חלוקת כוחות" }); }
+        catch (e) { if (e && e.name !== "AbortError") downloadTeamCard(blob); }
+      } else {
+        downloadTeamCard(blob);
+      }
+    } catch (e) {
+      logClientError(e.message, e.stack, "shareTeamsImage");
+      window.alert("יצירת התמונה נכשלה — נסה שוב.");
+    }
+    setSharingTeams(false);
+  };
+
   return (
     <div style={S.adminGame}>
       <div style={S.rowBetween}>
@@ -1587,6 +1660,53 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
       )}
       <button className="btn waBtn" onClick={shareWa} disabled={main.length===0}>שלח רשימה לוואטסאפ</button>
       <button className="btn small" style={{marginTop:6,width:"100%"}} onClick={copyWaLog} disabled={main.length===0}>{copiedMsg || "📋 העתק רשימה בפורמט לוג וואטסאפ"}</button>
+      <div>
+        <button className="btn small" style={{marginTop:6,width:"100%"}} onClick={()=> showTeamSplit ? setShowTeamSplit(false) : openTeamSplit()} disabled={main.length<2}>
+          ⚽ חלוקה לקבוצות {showTeamSplit?"▲":"▼"}
+        </button>
+        {showTeamSplit && teamSplit && (
+          <div style={S.teamSplitPanel}>
+            <div style={S.teamSplitCols}>
+              <div style={S.teamCol}>
+                <div style={S.teamColTitle}>קבוצה 1 ({teamSplit.team1.length}) · דירוג: {teamSplit.team1.reduce((s,p)=>s+p.grade,0)}</div>
+                {teamSplit.team1.map(p=>(
+                  <div key={p.id} style={S.teamPlayerRow}>
+                    <span>{p.name} ({p.grade})</span>
+                    <button className="mini" onClick={()=>swapPlayer(p.id,1)} title="העבר לקבוצה 2">⇄</button>
+                  </div>
+                ))}
+              </div>
+              <div style={S.teamCol}>
+                <div style={S.teamColTitle}>קבוצה 2 ({teamSplit.team2.length}) · דירוג: {teamSplit.team2.reduce((s,p)=>s+p.grade,0)}</div>
+                {teamSplit.team2.map(p=>(
+                  <div key={p.id} style={S.teamPlayerRow}>
+                    <button className="mini" onClick={()=>swapPlayer(p.id,2)} title="העבר לקבוצה 1">⇄</button>
+                    <span>{p.name} ({p.grade})</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:6,marginTop:8}}>
+              <button className="btn small" style={{flex:1}} onClick={reshuffleTeams}>🔀 ערבב מחדש</button>
+              <button className="btn primary small" style={{flex:1}} onClick={saveTeamSplit}>💾 שמור חלוקה</button>
+            </div>
+            <button className="btn waBtn" style={{width:"100%",marginTop:6}} onClick={shareTeamsImage} disabled={sharingTeams}>{sharingTeams?"מכין תמונה…":"📤 שיתוף לוואטסאפ"}</button>
+          </div>
+        )}
+      </div>
+      {teamSplit && (
+        <div ref={teamCardRef} style={S.teamCardHidden}>
+          <div style={S.teamCardHeader}>⚽ כדורגל גניגרי ושות'<br/>{dayName(game.kickoff)} · {fmtTime(game.kickoff)}</div>
+          <div style={S.teamCardCols}>
+            <div style={{...S.teamCardCol,background:"#3b82f6"}}>
+              {teamSplit.team1.map((p,i)=><div key={p.id} style={S.teamCardPlayer}>{i+1}. {p.name}</div>)}
+            </div>
+            <div style={{...S.teamCardCol,background:"#f97316"}}>
+              {teamSplit.team2.map((p,i)=><div key={p.id} style={S.teamCardPlayer}>{i+1}. {p.name}</div>)}
+            </div>
+          </div>
+        </div>
+      )}
       <div style={S.addRow}>
         <select style={S.selectSm} value={addId} onChange={e=>setAddId(e.target.value)}>
           <option value="">+ הוסף שחקן ידנית…</option>
@@ -1665,6 +1785,15 @@ function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
   const setGroup = async (id, group) => {
     await callAdmin("admin_set_player_group", { input_player_id: id, input_group: group, input_pw: cred.pw });
     await refresh();
+  };
+  // דירוג מספרי לחלוקת כוחות (ר' migrations/0013, שלב A) — מוזן ידנית
+  // בלבד, אין עדכון אוטומטי לפי תוצאות (אין עדיין היסטוריית תוצאות).
+  const setGrade = async (id, newGradeRaw, otherErrSetter) => {
+    const g = parseInt(newGradeRaw, 10);
+    if (!Number.isFinite(g) || g < 1 || g > 99) { otherErrSetter("דירוג חייב להיות מספר בין 1 ל-99"); return false; }
+    await callAdmin("admin_set_player_grade", { input_player_id: id, input_grade: g, input_pw: cred.pw });
+    await refresh();
+    return true;
   };
   const remove = async (id, name) => {
     if (!window.confirm("להסיר את " + name + " מרשימת השחקנים? הפעולה תמחק גם את כל ההרשמות שלו למשחקים, ולא ניתנת לביטול.")) return;
@@ -1801,6 +1930,7 @@ function AdminRoster({ roster, admins, refresh, cred, attendanceCounts }) {
                   <option value="secondary">קבוצה משנית</option>
                 </select>
               </div>
+              <GradeEditor player={p} onSave={setGrade} />
             </div>
           );
         })}
@@ -1890,6 +2020,36 @@ function EmailEditor({ player, onSave }) {
   return (
     <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2,flexWrap:"wrap"}}>
       <input style={{...S.input,width:190,padding:6}} value={val} onChange={e=>setVal(e.target.value)} type="email" placeholder="you@example.com" />
+      <button className="btn small" onClick={save}>שמור</button>
+      <button className="btn small" onClick={()=>setEditing(false)}>בטל</button>
+      {err && <span style={{...S.errText,marginTop:0}}>{err}</span>}
+    </div>
+  );
+}
+
+// עריכת דירוג שחקן לחלוקת כוחות (ר' migrations/0013, שלב A) — נראה רק
+// באדמין, לא נחשף לשחקנים בשום מקום (ר' AdminGameRow, פאנל החלוקה).
+function GradeEditor({ player, onSave }) {
+  const [editing,setEditing]=useState(false);
+  const [val,setVal]=useState(player.grade);
+  const [err,setErr]=useState("");
+
+  if (!editing) {
+    return (
+      <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+        <div style={S.subLine}>דירוג: {player.grade}</div>
+        <span style={{...S.linkText,fontSize:12}} onClick={()=>{setVal(player.grade); setErr(""); setEditing(true);}}>שנה דירוג</span>
+      </div>
+    );
+  }
+  const save = async () => {
+    setErr("");
+    const ok = await onSave(player.id, val, setErr);
+    if (ok) setEditing(false);
+  };
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4,flexWrap:"wrap"}}>
+      <input style={{...S.input,width:70,padding:6}} value={val} onChange={e=>setVal(e.target.value)} type="number" min="1" max="99" />
       <button className="btn small" onClick={save}>שמור</button>
       <button className="btn small" onClick={()=>setEditing(false)}>בטל</button>
       {err && <span style={{...S.errText,marginTop:0}}>{err}</span>}
@@ -1991,6 +2151,16 @@ const S = {
   flagLabel: { display:"flex", alignItems:"center", gap:5, fontSize:13, cursor:"pointer" },
   pubBar: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, background:"#fef3c7", padding:"10px 12px", borderRadius:8, marginTop:10, flexWrap:"wrap" },
   pubBarOn: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, background:"#dcfce7", padding:"10px 12px", borderRadius:8, marginTop:10, flexWrap:"wrap" },
+  teamSplitPanel: { marginTop:8, padding:10, border:"1px solid #e2e8e2", borderRadius:10, background:"#fafcfa" },
+  teamSplitCols: { display:"flex", gap:8 },
+  teamCol: { flex:1, background:"#fff", border:"1px solid #e2e8e2", borderRadius:8, padding:8, minWidth:0 },
+  teamColTitle: { fontWeight:800, fontSize:12, color:"#166534", marginBottom:6 },
+  teamPlayerRow: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:6, fontSize:13, padding:"4px 0", borderBottom:"1px solid #f0f0f0" },
+  teamCardHidden: { position:"absolute", left:-9999, top:0, width:420, background:"#fff", fontFamily:"'Heebo',system-ui,sans-serif", direction:"rtl" },
+  teamCardHeader: { textAlign:"center", fontWeight:800, fontSize:16, color:"#166534", padding:"16px 10px", background:"#f2f6f0", lineHeight:1.6 },
+  teamCardCols: { display:"flex" },
+  teamCardCol: { flex:1, padding:"14px 10px", color:"#fff", fontWeight:700, fontSize:15 },
+  teamCardPlayer: { padding:"7px 0", borderBottom:"1px solid rgba(255,255,255,0.3)" },
   pubText: { fontSize:13, fontWeight:600, color:"#3f3f2e" },
   pendRow: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, padding:"10px 0", borderBottom:"1px solid #eef2ee", flexWrap:"wrap" },
   pendActions: { display:"flex", gap:6, flexWrap:"wrap" },

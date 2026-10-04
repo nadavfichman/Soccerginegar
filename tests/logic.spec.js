@@ -6,7 +6,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
   normPhone, validName, normName, validPhone, normEmail, validEmail, sameEmail,
-  findDuplicate, tierRank, sortRegs,
+  findDuplicate, tierRank, sortRegs, splitTeamsByGrade,
 } = require("../logic.js");
 
 // ---- טלפון/שם/מייל ----
@@ -130,4 +130,44 @@ test("sortRegs: בלי attendanceCounts, זמן הרשמה שובר שוויון
   ];
   const sorted = sortRegs(regs, roster2);
   assert.deepEqual(sorted.map(r=>r.player_id), ["a", "b"]);
+});
+
+// ---- splitTeamsByGrade ----
+
+test("splitTeamsByGrade: גדלי הקבוצות תקינים (זוגי)", () => {
+  const players = [1,2,3,4,5,6].map(i => ({ id: "p"+i, grade: 50 }));
+  const { team1, team2 } = splitTeamsByGrade(players);
+  assert.equal(team1.length, 3);
+  assert.equal(team2.length, 3);
+});
+
+test("splitTeamsByGrade: גדלי הקבוצות תקינים (אי-זוגי — העודף לקבוצה 1)", () => {
+  const players = [1,2,3,4,5].map(i => ({ id: "p"+i, grade: 50 }));
+  const { team1, team2 } = splitTeamsByGrade(players);
+  assert.equal(team1.length, 3);
+  assert.equal(team2.length, 2);
+});
+
+test("splitTeamsByGrade: מוצא חלוקה מאוזנת מושלמת כשהיא קיימת", () => {
+  // 10+40=50 מול 20+30=50 — הפרש 0 אמור להימצא כמעט תמיד תוך 200 ניסיונות
+  const players = [
+    { id: "a", grade: 10 }, { id: "b", grade: 20 },
+    { id: "c", grade: 30 }, { id: "d", grade: 40 },
+  ];
+  const { team1, team2 } = splitTeamsByGrade(players, 200);
+  const sum = (t) => t.reduce((s,p)=>s+p.grade, 0);
+  assert.equal(Math.abs(sum(team1) - sum(team2)), 0);
+});
+
+test("splitTeamsByGrade: לא מאבד ולא משכפל שחקנים", () => {
+  const players = [1,2,3,4,5,6,7].map(i => ({ id: "p"+i, grade: 40+i }));
+  const { team1, team2 } = splitTeamsByGrade(players);
+  const ids = [...team1, ...team2].map(p=>p.id).sort();
+  assert.deepEqual(ids, players.map(p=>p.id).sort());
+});
+
+test("splitTeamsByGrade: רשימה ריקה לא קורסת", () => {
+  const { team1, team2 } = splitTeamsByGrade([]);
+  assert.deepEqual(team1, []);
+  assert.deepEqual(team2, []);
 });

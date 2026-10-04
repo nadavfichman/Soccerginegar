@@ -1699,11 +1699,23 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts }) {
           <div style={S.teamCardHeader}>⚽ כדורגל גניגרי ושות'<br/>{dayName(game.kickoff)} · {fmtTime(game.kickoff)}</div>
           <div style={S.teamCardCols}>
             <div style={{...S.teamCardCol,background:"#3b82f6"}}>
-              {teamSplit.team1.map((p,i)=><div key={p.id} style={S.teamCardPlayer}>{i+1}. {p.name}</div>)}
+              {teamSplit.team1.map((p,i)=>(
+                <div key={p.id} style={S.teamCardPlayer}>
+                  <span style={S.teamCardBadge}>{i+1}</span><span>{p.name}</span>
+                </div>
+              ))}
             </div>
             <div style={{...S.teamCardCol,background:"#f97316"}}>
-              {teamSplit.team2.map((p,i)=><div key={p.id} style={S.teamCardPlayer}>{i+1}. {p.name}</div>)}
+              {teamSplit.team2.map((p,i)=>(
+                <div key={p.id} style={S.teamCardPlayer}>
+                  <span style={S.teamCardBadge}>{i+1}</span><span>{p.name}</span>
+                </div>
+              ))}
             </div>
+          </div>
+          <div style={S.teamCardFooterRow}>
+            <div style={{...S.teamCardFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teamSplit.team1.length} שחקנים</div>
+            <div style={{...S.teamCardFooter,background:"#ffedd5",color:"#7c2d12"}}>{teamSplit.team2.length} שחקנים</div>
           </div>
         </div>
       )}
@@ -2156,11 +2168,14 @@ const S = {
   teamCol: { flex:1, background:"#fff", border:"1px solid #e2e8e2", borderRadius:8, padding:8, minWidth:0 },
   teamColTitle: { fontWeight:800, fontSize:12, color:"#166534", marginBottom:6 },
   teamPlayerRow: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:6, fontSize:13, padding:"4px 0", borderBottom:"1px solid #f0f0f0" },
-  teamCardHidden: { position:"absolute", left:-9999, top:0, width:420, background:"#fff", fontFamily:"'Heebo',system-ui,sans-serif", direction:"rtl" },
-  teamCardHeader: { textAlign:"center", fontWeight:800, fontSize:16, color:"#166534", padding:"16px 10px", background:"#f2f6f0", lineHeight:1.6 },
+  teamCardHidden: { position:"absolute", left:-9999, top:0, width:440, background:"#fff", fontFamily:"'Heebo',system-ui,sans-serif", direction:"rtl", borderRadius:18, overflow:"hidden", boxShadow:"0 4px 18px rgba(0,0,0,.12)" },
+  teamCardHeader: { textAlign:"center", fontWeight:800, fontSize:17, color:"#166534", padding:"20px 10px", background:"#f2f6f0", lineHeight:1.7 },
   teamCardCols: { display:"flex" },
-  teamCardCol: { flex:1, padding:"14px 10px", color:"#fff", fontWeight:700, fontSize:15 },
-  teamCardPlayer: { padding:"7px 0", borderBottom:"1px solid rgba(255,255,255,0.3)" },
+  teamCardCol: { flex:1, padding:"18px 14px", color:"#fff", fontWeight:700, fontSize:16 },
+  teamCardPlayer: { display:"flex", alignItems:"center", gap:10, padding:"9px 0", borderBottom:"1px solid rgba(255,255,255,0.25)" },
+  teamCardBadge: { display:"inline-flex", alignItems:"center", justifyContent:"center", width:24, height:24, borderRadius:"50%", background:"rgba(255,255,255,0.25)", fontSize:12, fontWeight:800, flexShrink:0 },
+  teamCardFooterRow: { display:"flex" },
+  teamCardFooter: { flex:1, textAlign:"center", fontWeight:800, fontSize:13, padding:"10px 0" },
   pubText: { fontSize:13, fontWeight:600, color:"#3f3f2e" },
   pendRow: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, padding:"10px 0", borderBottom:"1px solid #eef2ee", flexWrap:"wrap" },
   pendActions: { display:"flex", gap:6, flexWrap:"wrap" },

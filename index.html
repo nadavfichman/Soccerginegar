@@ -1467,11 +1467,34 @@ function PendingRequestRow({ req, onApprove, onReject }) {
 function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }) {
   const [showNew,setShowNew]=useState(false);
   const [showOld,setShowOld]=useState(false);
+  // משחק שכבר יש לו תוצאה שמורה (admin_set_game_result) "נצרב" להיסטוריה —
+  // נעלם לגמרי מטאב "משחקים" (גם מהרשימה הפעילה וגם מ"משחקים קודמים
+  // ונעולים"), לא רק מתקפל, ונשאר נגיש רק דרך טאב "📜 היסטוריה" (ר' שיחה
+  // עם המשתמש — "ברגע שהזנתי ציון... צריך לצאת משדה משחקים"). נבדק מול
+  // admin_get_all_game_results (אותו מקור בדיוק כמו טאב ההיסטוריה, בלי
+  // RPC חדש) — מסונן לשורות 'live:' בלבד, כי רק אלה תואמות שורת games
+  // אמיתית כאן (למשחקים מיובאים מ-TeamPicker אין שורת games חיה בכלל).
+  // נטען בפולינג כל 5 שניות, אותו קצב בדיוק כמו רענון שאר נתוני האפליקציה
+  // ב-App — כך שהזנת תוצאה גוררת היעלמות מהירה בלי צורך בחיווט פרופ חדש.
+  const [resultGameIds,setResultGameIds]=useState(new Set());
+  useEffect(() => {
+    let alive = true;
+    const credArgs = { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null };
+    const load = async () => {
+      const rows = await callAdmin("admin_get_all_game_results", credArgs);
+      if (!alive) return;
+      const ids = new Set((rows||[]).filter(r => r.game_id && r.game_id.startsWith("live:")).map(r => r.game_id.slice(5)));
+      setResultGameIds(ids);
+    };
+    load();
+    const t = setInterval(load, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, [cred.pw, cred.phone, cred.pin]);
   const addGame = async (g) => {
     await callAdmin("admin_create_game", { input_kickoff: g.kickoff, input_opens_at: g.opensAt, input_visible_to_primary: g.visiblePrimary, input_visible_to_secondary: g.visibleSecondary, input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
     setShowNew(false); await refresh();
   };
-  const sorted = [...games].sort((a,b)=>a.kickoff-b.kickoff);
+  const sorted = [...games].sort((a,b)=>a.kickoff-b.kickoff).filter(g => !resultGameIds.has(g.id));
   // משחקים נעולים (נוכחות סופית, "היסטוריה") מתקפלים כברירת מחדל — לא
   // נמחקים ולא נעלמים מה-DB (attendanceCounts ב-App עדיין תלוי בהם
   // לעדיפות "מתמיד" של משחקים עתידיים), רק לא תופסים מקום במסך כברירת
@@ -1535,7 +1558,10 @@ function GameResultsHistory({ cred, roster }) {
         resultsHistory.length === 0 ? (
           <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>אין עדיין תוצאות מתועדות</div>
         ) : resultsHistory.map(r => {
-          const dotColor = r.team1_score > r.team2_score ? "#f97316" : r.team2_score > r.team1_score ? "#3b82f6" : "#9ca3af";
+          // הנקודה בצבע הקבוצה שניצחה — קבוצה 1 כחולה (#3b82f6), קבוצה 2
+          // כתומה (#f97316), אותם צבעים בדיוק כמו עמודות הקבוצות למטה
+          // (ר' שיחה עם המשתמש — "לשים את העיגול לפי צבע הקבוצה שנצחה")
+          const dotColor = r.team1_score > r.team2_score ? "#3b82f6" : r.team2_score > r.team1_score ? "#f97316" : "#9ca3af";
           const count = Number(r.team1_count) + Number(r.team2_count);
           const isOpen = expanded === r.game_id;
           return (

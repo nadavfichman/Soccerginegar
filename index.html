@@ -928,8 +928,11 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
           <button style={activeTab==="history"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("history")}>
             📜 היסטוריה
           </button>
-          <button style={activeTab==="players"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("players")}>
+          <button style={{...(activeTab==="players"?S.tabSwitcherBtnActive:S.tabSwitcherBtn), position:"relative"}} onClick={()=>setActiveTab("players")}>
             👥 שחקנים
+            {pending.length > 0 && (
+              <span style={S.pendingBadge}>{pending.length}</span>
+            )}
           </button>
         </nav>
       )}
@@ -2427,6 +2430,8 @@ const S = {
   tabSwitcher: { display:"flex", gap:6, background:"#e2e8e2", padding:4, borderRadius:10, position:"sticky", top:0, zIndex:10, boxShadow:"0 2px 6px rgba(0,0,0,.08)" },
   tabSwitcherBtn: { flex:1, padding:"9px 0", border:"none", borderRadius:8, background:"none", fontSize:14, fontWeight:700, color:"#4b5563", cursor:"pointer", fontFamily:"inherit" },
   tabSwitcherBtnActive: { flex:1, padding:"9px 0", border:"none", borderRadius:8, background:"#166534", fontSize:14, fontWeight:800, color:"#fff", cursor:"pointer", fontFamily:"inherit" },
+  // נקודת-התראה על טאב "שחקנים" כשיש בקשת הצטרפות ממתינה (ר' שיחה עם המשתמש)
+  pendingBadge: { position:"absolute", top:-6, left:-6, background:"#dc2626", color:"#fff", borderRadius:"50%", minWidth:18, height:18, fontSize:11, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 4px" },
   card: { background:"#fff", borderRadius:14, padding:16, boxShadow:"0 1px 3px rgba(0,0,0,.06)" },
   cardHot: { outline:"2px solid #f59e0b" },
   roleBar: { display:"flex", justifyContent:"space-between", alignItems:"center", background:"#166534", color:"#fff", borderRadius:12, padding:"10px 14px" },

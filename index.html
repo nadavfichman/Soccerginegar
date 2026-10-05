@@ -312,11 +312,11 @@ function App() {
   // 1. נעילת נוכחות (כברירת המחדל הוותיקה) — registrations.attended=true
   //    במשחק עם attendance_locked=true. כל עוד משחק פתוח, הסימונים בו
   //    ניתנים לשינוי חופשי ולא משפיעים על העדיפות; נעילה "צורבת" אותם.
-  // 2. תוצאה שמורה + כוחות מפורסמים (ר' שיחה עם המשתמש — "אם משחק נכנס
-  //    להיסטוריה [=הוזנה לו תוצאה], יספר בכמות המשחקים... גם אם לא ננעל,
-  //    לפי הרשימה של הכוחות שפורסמה") — get_counted_results_players
-  //    (migrations/0024) כבר מסנן בצד השרת רק משחקים עם גם game_results
-  //    וגם teams_published=true, ומחזיר את כל מי שהיה בחלוקה (game_teams).
+  // 2. תוצאה שמורה + חלוקה שמורה (ר' שיחה עם המשתמש — "אם משחק נכנס
+  //    להיסטוריה [=הוזנה לו תוצאה], יספר בכמות המשחקים... גם אם לא ננעל")
+  //    — get_counted_results_players (migrations/0024, מתוקן ב-0025 להסיר
+  //    תלות מבלבלת בפרסום הכוחות לשחקנים) מחזיר, לכל משחק עם גם
+  //    game_results וגם game_teams שמורה, את כל מי שהיה בחלוקה.
   const lockedGameIds = new Set(games.filter(g => g.attendance_locked).map(g => g.id));
   const attendanceCounts = {};
   const countedGamePlayer = new Set(); // "gameId|playerId" — מונע ספירה כפולה אם משחק עונה לשני המקורות גם יחד

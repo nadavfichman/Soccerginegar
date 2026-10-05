@@ -399,19 +399,21 @@ end; $$;
 
 grant execute on function get_published_teams(text) to anon, authenticated;
 
--- משחק עם תוצאה שמורה + כוחות מפורסמים נספר ב"מתמיד" (attendanceCounts,
--- index.html) גם בלי נעילת נוכחות (ר' migrations/0024, שיחה עם המשתמש —
--- "אם משחק נכנס להיסטוריה יספר בכמות המשחקים... לפי הרשימה של הכוחות
--- שפורסמה"). ציבורי כמו get_published_teams, מאותה סיבה בדיוק — מחושב גם
--- למסך שחקן רגיל, לא רק לאדמין.
+-- משחק עם תוצאה שמורה נספר ב"מתמיד" (attendanceCounts, index.html) גם
+-- בלי נעילת נוכחות (ר' migrations/0024+0025, שיחה עם המשתמש — "אם משחק
+-- נכנס להיסטוריה יספר בכמות המשחקים... גם אם לא ננעל"). migrations/0024
+-- תנה את זה גם בפרסום הכוחות לשחקנים (teams_published) — תנאי נפרד
+-- שהתברר כמבלבל בפועל (המשתמש הזין תוצאה אבל זה לא נספר, כי לא לחץ
+-- בנפרד על "פרסם כוחות"); migrations/0025 הסיר את התנאי הזה — תוצאה
+-- שמורה + חלוקה שמורה (game_teams) מספיקות, בלי תלות בפעולת UI נפרדת.
+-- ציבורי כמו get_published_teams, מאותה סיבה בדיוק — מחושב גם למסך
+-- שחקן רגיל, לא רק לאדמין. לא חושף שום דבר חוץ מ-player_id/game_id גולמיים.
 create or replace function get_counted_results_players()
 returns table(game_id text, player_id text)
 language sql security definer as $$
   select gt.game_id, gt.player_id
-  from games g
-  join game_results gr on gr.game_id = g.id
-  join game_teams gt on gt.game_id = g.id
-  where g.teams_published = true;
+  from game_results gr
+  join game_teams gt on gt.game_id = gr.game_id;
 $$;
 
 grant execute on function get_counted_results_players() to anon, authenticated;

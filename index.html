@@ -841,7 +841,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
   // לאדמין-על, שיש לו גם "משחקים" וגם "שחקנים"; מנהל רגיל רואה רק משחקים,
   // אין טעם בטאבים בשבילו. "insights"/סטטיסטיקה עתידית — טאב שלישי שיתווסף
   // כשיהיה לו תוכן אמיתי, לא placeholder ריק עכשיו.
-  const [activeTab,setActiveTab]=useState("games"); // "games" | "players"
+  const [activeTab,setActiveTab]=useState("games"); // "games" | "history" | "players"
   // דירוגי שחקנים לחלוקת כוחות (ר' migrations/0014) — נשמרים בטבלה נעולה,
   // בלי SELECT ציבורי, נטענים רק כאן דרך RPC אדמין אחרי התחברות מוצלחת.
   const [grades,setGrades]=useState({});
@@ -925,6 +925,9 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
           <button style={activeTab==="games"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("games")}>
             ⚽ משחקים
           </button>
+          <button style={activeTab==="history"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("history")}>
+            📜 היסטוריה
+          </button>
           <button style={activeTab==="players"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("players")}>
             👥 שחקנים
           </button>
@@ -934,6 +937,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
       {isSuper ? (
         <>
           {activeTab==="games" && <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />}
+          {activeTab==="history" && <GameResultsHistory cred={cred} />}
           {activeTab==="players" && (
             <>
               <PendingRequests {...{ pending, roster, refresh, cred }} />
@@ -1490,6 +1494,48 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grade
       </button>
       {showHistory && historyLoading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
       {showHistory && !historyLoading && resultsHistory && (
+        resultsHistory.length === 0 ? (
+          <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>אין עדיין תוצאות מתועדות</div>
+        ) : resultsHistory.map(r => {
+          const dotColor = r.team1_score > r.team2_score ? "#f97316" : r.team2_score > r.team1_score ? "#3b82f6" : "#9ca3af";
+          const count = Number(r.team1_count) + Number(r.team2_count);
+          return (
+            <div key={r.game_id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 4px",borderBottom:"1px solid #eee"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{display:"inline-block",width:10,height:10,borderRadius:"50%",background:dotColor}}></span>
+                <b>{r.team1_score} - {r.team2_score}</b>
+                <span style={S.subLine}>{count} שחקנים</span>
+              </div>
+              <span style={S.subLine}>{dateOnly(r.kickoff)}</span>
+            </div>
+          );
+        })
+      )}
+    </section>
+  );
+}
+
+// רשימת היסטוריית תוצאות כטאב עליון קבוע (ר' שיחה עם המשתמש — "עדיין לא רואה
+// היסטוריית משחקים"). זהה ב-UI לכפתור המתקפל בתוך AdminGames (שם נשאר כמות
+// שהוא, כדי לא לפגוע בגישה למנהל רגיל שלא רואה טאבים בכלל) — אבל כאן נגיש
+// בלחיצה אחת מראש המסך, בלי גלילה דרך כל המשחקים. טעינה אוטומטית ב-mount —
+// הכניסה לטאב עצמה היא כבר הפעולה המפורשת, אין צורך בעוד כפתור-הרחבה.
+function GameResultsHistory({ cred }) {
+  const [loading,setLoading]=useState(true);
+  const [resultsHistory,setResultsHistory]=useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const rows = await callAdmin("admin_get_all_game_results", { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
+      if (alive) { setResultsHistory(rows || []); setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, []);
+  return (
+    <section style={S.card}>
+      <h2 style={S.h2}>📜 היסטוריית תוצאות</h2>
+      {loading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
+      {!loading && resultsHistory && (
         resultsHistory.length === 0 ? (
           <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>אין עדיין תוצאות מתועדות</div>
         ) : resultsHistory.map(r => {

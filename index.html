@@ -291,7 +291,7 @@ function App() {
     id: g.id, kickoff: g.kickoff, opensAt: g.opens_at,
     published: g.published, rosterPublished: g.roster_published, attendanceLocked: !!g.attendance_locked,
     visibleToPrimary: !!g.visible_to_primary, visibleToSecondary: !!g.visible_to_secondary,
-    registrationClosed: !!g.registration_closed,
+    registrationClosed: !!g.registration_closed, teamsPublished: !!g.teams_published,
     registrations: regs.filter(r => r.game_id === g.id).map(r => ({ playerId: r.player_id, ts: r.ts, attended: !!r.attended, guestName: r.guest_name || null })),
     declines: declines.filter(d => d.game_id === g.id).map(d => ({ playerId: d.player_id, ts: d.ts })),
   }));
@@ -736,7 +736,58 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts, hideHeader
         <><div style={S.publishedTag}>{registrationClosed && !rosterPublished ? "רשימה סגורה" : "רשימת המשתתפים פורסמה"}</div>
         <PlayerRosterList main={main} wait={wait} roster={roster} meId={me.id} /></>
       ) : (myReg && <div style={S.pendingRoster}>רשימת המשתתפים במשחק תפורסם בקבוצת הוואטסאפ, בהתאם למגבלת כמות השחקנים במשחק.</div>)}
+      {game.teamsPublished && <TeamsDisplay gameId={game.id} roster={roster} regs={game.registrations} />}
     </section>
+  );
+}
+
+// הצגת חלוקת הכוחות לשחקן בתוך האפליקציה (ר' migrations/0020) — מקביל
+// ל"שיתוף לוואטסאפ" של האדמין, אבל תוך-אפליקטיבי. get_published_teams
+// ציבורי (בלי cred) ובודק teams_published בפנים — נראות לפי קבוצה
+// (ראשית/משנית) כבר מגיעה "בחינם" כי GameCard כולו לא מרונדר למשחק
+// שהשחקן לא רואה. טעינה עצלה בלחיצה, לא אוטומטית. שם בלבד, בלי דירוג —
+// game_teams לא מכילה דירוג בכלל.
+function TeamsDisplay({ gameId, roster, regs }) {
+  const [show,setShow] = useState(false);
+  const [loading,setLoading] = useState(false);
+  const [teams,setTeams] = useState(null); // {team1:[{id,name}], team2:[...]} | null
+  const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
+  const displayNm = id => { const g = (regs.find(r=>r.playerId===id)||{}).guestName; return g ? (g+" (אורח)") : nameOf(id); };
+  const toggle = async () => {
+    if (show) { setShow(false); return; }
+    setShow(true);
+    if (teams) return;
+    setLoading(true);
+    const { data, error } = await db.rpc("get_published_teams", { input_game_id: gameId });
+    setLoading(false);
+    if (!error && data) {
+      setTeams({
+        team1: data.filter(r=>r.team===1).map(r=>({ id:r.player_id, name:displayNm(r.player_id) })),
+        team2: data.filter(r=>r.team===2).map(r=>({ id:r.player_id, name:displayNm(r.player_id) })),
+      });
+    }
+  };
+  return (
+    <div style={{marginTop:10}}>
+      <button className="btn primary" style={{width:"100%",padding:12,fontSize:15}} onClick={toggle}>⚽ הצגת הכוחות {show?"▲":"▼"}</button>
+      {show && loading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
+      {show && !loading && teams && (
+        <div style={S.teamSplitPanel}>
+          <div style={S.teamSplitCols}>
+            <div style={{...S.teamCol,background:"#3b82f6"}}>
+              {teams.team1.map(p=><div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{p.name}</span></div>)}
+            </div>
+            <div style={{...S.teamCol,background:"#f97316"}}>
+              {teams.team2.map(p=><div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{p.name}</span></div>)}
+            </div>
+          </div>
+          <div style={S.teamSplitFooterRow}>
+            <div style={{...S.teamSplitFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teams.team1.length} שחקנים</div>
+            <div style={{...S.teamSplitFooter,background:"#ffedd5",color:"#7c2d12"}}>{teams.team2.length} שחקנים</div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1514,6 +1565,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
     if ("visible_to_primary" in patch) await callAdmin("admin_set_game_visible_primary", { input_game_id: game.id, input_value: patch.visible_to_primary, ...credArgs });
     if ("visible_to_secondary" in patch) await callAdmin("admin_set_game_visible_secondary", { input_game_id: game.id, input_value: patch.visible_to_secondary, ...credArgs });
     if ("registration_closed" in patch) await callAdmin("admin_set_registration_closed", { input_game_id: game.id, input_value: patch.registration_closed, ...credArgs });
+    if ("teams_published" in patch) await callAdmin("admin_set_teams_published", { input_game_id: game.id, input_value: patch.teams_published, ...credArgs });
     await refresh();
   };
   const removeReg = async (pid, name) => {
@@ -1807,6 +1859,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
             <button className="btn primary small" style={{flex:1}} onClick={saveTeamSplit}>💾 שמור חלוקה</button>
           </div>
           <button className="btn waBtn" style={{width:"100%",marginTop:6}} onClick={shareTeamsImage} disabled={sharingTeams}>{sharingTeams?"מכין תמונה…":"📤 שיתוף לוואטסאפ"}</button>
+          <button className="btn small" style={{width:"100%",marginTop:6}} onClick={()=>setGameField({teams_published:!game.teamsPublished})}>{game.teamsPublished?"הסתר כוחות מהשחקנים":"📢 פרסם כוחות לשחקנים"}</button>
           {hasHappened && (
             <div style={{marginTop:10,paddingTop:10,borderTop:"1px dashed rgba(255,255,255,.4)"}}>
               {gameResult && (

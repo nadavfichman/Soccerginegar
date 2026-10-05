@@ -410,10 +410,10 @@ begin
     order by g.kickoff desc;
 end; $$;
 
--- "פורמה" — 5 התוצאות האחרונות לכל שחקן (ר' migrations/0017), נגזר מ-
--- game_teams+game_results הקיימים (בלי טבלה חדשה). ניצחון/הפסד/תיקו
--- נקבע לפי team ששויך לו מול game_results. לתצוגה כנקודות צבעוניות
--- ליד כל שם בפאנל חלוקת הכוחות (ירוק/אדום/כחול, ר' שיחה עם המשתמש).
+-- "פורמה" — 5 התוצאות האחרונות לכל שחקן (ר' migrations/0017, עודכן ב-0019
+-- לאחד עם היסטוריה מיובאת מ-TeamPicker). ניצחון/הפסד/תיקו נקבע לפי team
+-- ששויך לו מול game_results (חי) או legacy_player_games (מיובא). לתצוגה
+-- כנקודות צבעוניות ליד כל שם בפאנל חלוקת הכוחות (ירוק/אדום/כחול).
 create or replace function admin_get_player_form(input_player_ids text[], input_pw text, input_phone text, input_pin text)
 returns table(player_id text, kickoff bigint, outcome text)
 language plpgsql security definer as $$
@@ -422,20 +422,27 @@ begin
   v_role := require_admin(input_pw, input_phone, input_pin);
   return query
     select x.player_id, x.kickoff, x.outcome from (
-      select gt.player_id, g.kickoff,
-        case
-          when gt.team = 1 and gr.team1_score > gr.team2_score then 'win'
-          when gt.team = 1 and gr.team1_score < gr.team2_score then 'loss'
-          when gt.team = 1 then 'draw'
-          when gt.team = 2 and gr.team2_score > gr.team1_score then 'win'
-          when gt.team = 2 and gr.team2_score < gr.team1_score then 'loss'
-          else 'draw'
-        end as outcome,
-        row_number() over (partition by gt.player_id order by g.kickoff desc) as rn
-      from game_teams gt
-      join game_results gr on gr.game_id = gt.game_id
-      join games g on g.id = gt.game_id
-      where gt.player_id = any(input_player_ids)
+      select combined.player_id, combined.kickoff, combined.outcome,
+        row_number() over (partition by combined.player_id order by combined.kickoff desc) as rn
+      from (
+        select gt.player_id, g.kickoff,
+          case
+            when gt.team = 1 and gr.team1_score > gr.team2_score then 'win'
+            when gt.team = 1 and gr.team1_score < gr.team2_score then 'loss'
+            when gt.team = 1 then 'draw'
+            when gt.team = 2 and gr.team2_score > gr.team1_score then 'win'
+            when gt.team = 2 and gr.team2_score < gr.team1_score then 'loss'
+            else 'draw'
+          end as outcome
+        from game_teams gt
+        join game_results gr on gr.game_id = gt.game_id
+        join games g on g.id = gt.game_id
+        where gt.player_id = any(input_player_ids)
+        union all
+        select lpg.player_id, floor(extract(epoch from lpg.game_date) * 1000)::bigint as kickoff, lpg.outcome
+        from legacy_player_games lpg
+        where lpg.player_id = any(input_player_ids)
+      ) combined
     ) x
     where x.rn <= 5
     order by x.player_id, x.kickoff desc;

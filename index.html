@@ -218,6 +218,10 @@ function App() {
   // האישורים שאומתו בכניסה לניהול — ברמת App כדי לשרוד מעבר בין מסך שחקן/ניהול
   // (AdminView נטענת מחדש בכל מעבר כזה, ואיתה כל ה-state המקומי שלה היה מתאפס).
   const [cred, setCred] = useState(null);
+  // גובה הכותרת (Header) בפועל — נמדד דינמית כדי שסרגל הטאבים (AdminView)
+  // ידע כמה "למטה" להידבק (top), ולא ידרוס אותה. ר' שיחה עם המשתמש —
+  // שני אלמנטים position:sticky עם אותו top:0 מתנגשים/חופפים זה על זה.
+  const [headerH, setHeaderH] = useState(0);
 
   const [roster, setRoster] = useState([]);
   const [pending, setPending] = useState([]);
@@ -307,22 +311,33 @@ function App() {
 
   return (
     <div dir="rtl" style={S.app}>
-      <Header view={view} setView={setView} />
+      <Header view={view} setView={setView} onHeight={setHeaderH} />
       {err && <div style={S.errBar}>{err}</div>}
       {view === "player" ? (
         <PlayerView {...{ roster, pending, games: gamesWithRegs, session, identity, now, refresh, loadIdentity, attendanceCounts, authError }} />
       ) : (
         <AdminView {...{ roster, pending, games: gamesWithRegs, now, role, setRole,
-          admins, myPhone, refresh, session, cred, setCred, attendanceCounts }} />
+          admins, myPhone, refresh, session, cred, setCred, attendanceCounts, headerH }} />
       )}
       <footer style={S.footer}>כדורגל גניגרי ושות' · ניהול הרשמה למשחק</footer>
     </div>
   );
 }
 
-function Header({ view, setView }) {
+function Header({ view, setView, onHeight }) {
   const tapCount = useRef(0);
   const tapTimer = useRef(null);
+  // מודד את הגובה בפועל של הכותרת (כולל padding) ומדווח להורה — כדי
+  // שסרגל הטאבים ב-AdminView ידע איפה בדיוק להידבק (top) ולא ידרוס אותה.
+  // ר' שיחה עם המשתמש: שני position:sticky עם אותו top:0 חפפו זה על זה.
+  const headerRef = useRef(null);
+  useEffect(() => {
+    if (!headerRef.current || !onHeight) return;
+    const measure = () => onHeight(headerRef.current.offsetHeight);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [onHeight]);
 
   const handleBallTap = () => {
     if (view === "admin") return;
@@ -336,7 +351,7 @@ function Header({ view, setView }) {
   };
 
   return (
-    <header style={S.header}>
+    <header style={S.header} ref={headerRef}>
       <div style={S.brand}>
         <span style={S.ball} onClick={handleBallTap}>⚽</span>
         <div><div style={S.brandTitle}>כדורגל גניגרי ושות'</div><div style={S.brandSub}>רישום למשחקים</div></div>
@@ -833,7 +848,7 @@ function PlayerRosterList({ main, wait, roster, meId }) {
 // ============================================================================
 // צד ניהול
 // ============================================================================
-function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone, refresh, session, cred, setCred, attendanceCounts }) {
+function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone, refresh, session, cred, setCred, attendanceCounts, headerH }) {
   const [pw,setPw]=useState(""); const [pin,setPin]=useState("");
   const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
   const [hint,setHint]=useState(null); // 'super' | 'admin' | null — רמז בלבד, לא מעניק הרשאה
@@ -921,7 +936,11 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
         // (בעיקר כרום באייפון) מציגים סרגל כלים קבוע משלהם בתחתית המסך,
         // שמכסה/חוטף הקשות מעל כל תוכן fixed שלנו שם. טאב רגיל בראש
         // התוכן פותר את זה לגמרי (ר' שיחה עם המשתמש — "לוחץ ולא קורה כלום").
-        <nav style={S.tabSwitcher}>
+        // top: headerH (לא 0!) — הכותרת (Header, App.js) היא position:sticky
+        // top:0 בעצמה; בלי האופסט הזה שני ה-sticky חופפים זה את זה (ר' שיחה
+        // עם המשתמש — "עולים עד למעלה ודורסים את הכותרת", וזה כנראה גם מה
+        // שגרם לקליקים לא להירשם נכון).
+        <nav style={{...S.tabSwitcher, top:headerH}}>
           <button style={activeTab==="games"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("games")}>
             ⚽ משחקים
           </button>
@@ -936,7 +955,6 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
           </button>
         </nav>
       )}
-      {isSuper && <SuperAdminPanel {...{ admins, roster, refresh, cred, session }} />}
       {isSuper ? (
         <>
           {activeTab==="games" && <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />}
@@ -951,6 +969,10 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
       ) : (
         <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />
       )}
+      {/* ר' שיחה עם המשתמש — "הזמנת מנהל חדש, הגדרות אדמין על, יומן שגיאות...
+          דברים פחות חשובים" — מועבר לתחתית המסך, אחרי התוכן העיקרי (משחקים/
+          היסטוריה/שחקנים), במקום לדחוף אותו מתחת לקיפול לפני שרואים אותו. */}
+      {isSuper && <SuperAdminPanel {...{ admins, roster, refresh, cred, session }} />}
     </main>
   );
 }
@@ -1483,38 +1505,28 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grade
 // היסטוריית תוצאות — טאב עליון קבוע משלה ("📜 היסטוריה", ליד "⚽ משחקים"/
 // "👥 שחקנים" ב-AdminView, ר' שיחה עם המשתמש). טעינה אוטומטית ב-mount —
 // הכניסה לטאב עצמה היא כבר הפעולה המפורשת, אין צורך בעוד כפתור-הרחבה.
-// כל שורה ניתנת להרחבה (ר' שיחה עם המשתמש — "כאשר נכנסים למשחק, ניתן גם
-// לראות את הכוחות שהיו באותו משחק") — מציגה את שתי הקבוצות שנשמרו לאותו משחק
-// (admin_get_game_teams, כבר קיים, ר' migrations/0014), נטען רק בלחיצה
-// ונשמר ב-cache מקומי כדי לא לשלוף שוב בכל toggle.
+// כוללת גם את 416 המשחקים ההיסטוריים שיובאו מ-TeamPicker, לא רק משחקים
+// חיים (ר' migrations/0023, שיחה עם המשתמש — "רוצה לראות את כל המשחקים
+// מהמאגר שדרור יצר, ובהמשך חדשים"). כל שורה ניתנת להרחבה (ר' שיחה עם
+// המשתמש — "כאשר נכנסים למשחק, ניתן גם לראות את הכוחות שהיו באותו
+// משחק") — מציגה את שתי הקבוצות. team1_player_ids/team2_player_ids
+// כבר מגיעים מוטמעים בתוך admin_get_all_game_results עצמה (גם לחי וגם
+// למיובא) — אין round-trip נוסף בלחיצה על שורה, רק מיפוי id→שם מקומי.
 function GameResultsHistory({ cred, roster }) {
   const [loading,setLoading]=useState(true);
   const [resultsHistory,setResultsHistory]=useState(null);
   const [expanded,setExpanded]=useState(null); // game_id פתוח כרגע, או null
-  const [teamsByGame,setTeamsByGame]=useState({}); // game_id -> {team1:[name,...], team2:[name,...]}
-  const [teamsLoading,setTeamsLoading]=useState(null); // game_id שנטען כרגע
-  const credArgs = { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null };
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || (id && id.startsWith("guest_") ? "אורח" : "—");
   useEffect(() => {
     let alive = true;
     (async () => {
+      const credArgs = { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null };
       const rows = await callAdmin("admin_get_all_game_results", credArgs);
       if (alive) { setResultsHistory(rows || []); setLoading(false); }
     })();
     return () => { alive = false; };
   }, []);
-  const toggleRow = async (gameId) => {
-    if (expanded === gameId) { setExpanded(null); return; }
-    setExpanded(gameId);
-    if (!teamsByGame[gameId]) {
-      setTeamsLoading(gameId);
-      const rows = await callAdmin("admin_get_game_teams", { input_game_id: gameId, ...credArgs });
-      setTeamsLoading(null);
-      const team1 = (rows||[]).filter(r=>r.team===1).map(r=>nameOf(r.player_id));
-      const team2 = (rows||[]).filter(r=>r.team===2).map(r=>nameOf(r.player_id));
-      setTeamsByGame(prev => ({ ...prev, [gameId]: { team1, team2 } }));
-    }
-  };
+  const toggleRow = (gameId) => setExpanded(prev => prev === gameId ? null : gameId);
   return (
     <section style={S.card}>
       <h2 style={S.h2}>📜 היסטוריית תוצאות</h2>
@@ -1526,7 +1538,6 @@ function GameResultsHistory({ cred, roster }) {
           const dotColor = r.team1_score > r.team2_score ? "#f97316" : r.team2_score > r.team1_score ? "#3b82f6" : "#9ca3af";
           const count = Number(r.team1_count) + Number(r.team2_count);
           const isOpen = expanded === r.game_id;
-          const teams = teamsByGame[r.game_id];
           return (
             <div key={r.game_id} style={{borderBottom:"1px solid #eee"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 4px",cursor:"pointer"}} onClick={()=>toggleRow(r.game_id)}>
@@ -1542,18 +1553,14 @@ function GameResultsHistory({ cred, roster }) {
               </div>
               {isOpen && (
                 <div style={{padding:"4px 4px 10px"}}>
-                  {teamsLoading===r.game_id ? (
-                    <div style={{...S.subLine,textAlign:"center"}}>טוען…</div>
-                  ) : teams && (
-                    <div style={S.teamSplitCols}>
-                      <div style={{...S.teamCol,background:"#3b82f6"}}>
-                        {teams.team1.map((name,i)=><div key={i} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{name}</span></div>)}
-                      </div>
-                      <div style={{...S.teamCol,background:"#f97316"}}>
-                        {teams.team2.map((name,i)=><div key={i} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{name}</span></div>)}
-                      </div>
+                  <div style={S.teamSplitCols}>
+                    <div style={{...S.teamCol,background:"#3b82f6"}}>
+                      {(r.team1_player_ids||[]).map((id,i)=><div key={i} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{nameOf(id)}</span></div>)}
                     </div>
-                  )}
+                    <div style={{...S.teamCol,background:"#f97316"}}>
+                      {(r.team2_player_ids||[]).map((id,i)=><div key={i} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{nameOf(id)}</span></div>)}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

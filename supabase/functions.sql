@@ -533,6 +533,42 @@ begin
   group by a.player_id, b.player_id;
 end; $$;
 
+-- "מידע על שחקן" (ר' migrations/0022) — נתוני קריירה מצטברים (בלי חלון
+-- 50 משחקים כמו admin_get_player_chemistry) לשחקן יחיד: סה"כ משחקים/
+-- ניצחונות/הפסדים/תיקו, מ-game_teams+game_results (חי) ו-
+-- legacy_player_games (מיובא) יחד.
+create or replace function admin_get_player_stats(input_player_id text, input_pw text, input_phone text, input_pin text)
+returns table(games_count integer, wins integer, losses integer, draws integer)
+language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  return query
+    with unified as (
+      select
+        case
+          when gt.team = 1 and gr.team1_score > gr.team2_score then 'win'
+          when gt.team = 1 and gr.team1_score < gr.team2_score then 'loss'
+          when gt.team = 1 then 'draw'
+          when gt.team = 2 and gr.team2_score > gr.team1_score then 'win'
+          when gt.team = 2 and gr.team2_score < gr.team1_score then 'loss'
+          else 'draw'
+        end as outcome
+      from game_teams gt
+      join game_results gr on gr.game_id = gt.game_id
+      where gt.player_id = input_player_id
+      union all
+      select lpg.outcome
+      from legacy_player_games lpg
+      where lpg.player_id = input_player_id
+    )
+  select count(*)::integer as games_count,
+    coalesce(sum((outcome = 'win')::integer), 0)::integer as wins,
+    coalesce(sum((outcome = 'loss')::integer), 0)::integer as losses,
+    coalesce(sum((outcome = 'draw')::integer), 0)::integer as draws
+  from unified;
+end; $$;
+
 -- הוחלפו (drop + create) כי היו קיימות קודם עם 2 פרמטרים בלבד, בלי אימות הרשאה כלל
 drop function if exists admin_add_registration(text, text);
 create or replace function admin_add_registration(

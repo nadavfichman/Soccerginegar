@@ -399,6 +399,23 @@ end; $$;
 
 grant execute on function get_published_teams(text) to anon, authenticated;
 
+-- משחק עם תוצאה שמורה + כוחות מפורסמים נספר ב"מתמיד" (attendanceCounts,
+-- index.html) גם בלי נעילת נוכחות (ר' migrations/0024, שיחה עם המשתמש —
+-- "אם משחק נכנס להיסטוריה יספר בכמות המשחקים... לפי הרשימה של הכוחות
+-- שפורסמה"). ציבורי כמו get_published_teams, מאותה סיבה בדיוק — מחושב גם
+-- למסך שחקן רגיל, לא רק לאדמין.
+create or replace function get_counted_results_players()
+returns table(game_id text, player_id text)
+language sql security definer as $$
+  select gt.game_id, gt.player_id
+  from games g
+  join game_results gr on gr.game_id = g.id
+  join game_teams gt on gt.game_id = g.id
+  where g.teams_published = true;
+$$;
+
+grant execute on function get_counted_results_players() to anon, authenticated;
+
 -- תיעוד תוצאות משחק (ר' migrations/0016) — צעד ראשון לקראת שלב C
 -- (כימיה/אחוזי-ניצחון), לא תלוי בייבוא היסטוריה מ-TeamPicker. דורש
 -- שחלוקת קבוצות כבר נשמרה לאותו משחק (אכיפה בצד השרת).

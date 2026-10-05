@@ -126,7 +126,7 @@ class ErrorBoundary extends React.Component {
 // ==== שכבת גישה לנתונים ====
 const api = {
   async loadAll() {
-    const [players, preqs, admins, areqs, games, regs, declines] = await Promise.all([
+    const [players, preqs, admins, areqs, games, regs, declines, resultPlayers] = await Promise.all([
       db.from("players").select("*"),
       db.from("player_requests").select("*"),
       db.from("admins").select("*"),
@@ -134,6 +134,10 @@ const api = {
       db.from("games").select("*"),
       db.from("registrations").select("id, game_id, player_id, ts, attended, guest_name"),
       db.from("game_declines").select("game_id, player_id, ts"),
+      // ר' migrations/0024 — משחקים עם תוצאה שמורה וכוחות מפורסמים נספרים
+      // ב"מתמיד" גם בלי נעילת נוכחות (ציבורי, בלי אישורי אדמין — נדרש גם
+      // למסך שחקן, לא רק לאדמין, ר' attendanceCounts למטה).
+      db.rpc("get_counted_results_players"),
     ]);
     return {
       roster: players.data || [],
@@ -143,6 +147,7 @@ const api = {
       games: games.data || [],
       regs: regs.data || [],
       declines: declines.data || [],
+      resultPlayers: resultPlayers.data || [],
     };
   },
   // בדיקת תפקיד — מוגן, לא חושף שום סוד. אף תפקיד לא ניתן לפי טלפון בלבד.
@@ -230,6 +235,7 @@ function App() {
   const [games, setGames] = useState([]);
   const [regs, setRegs] = useState([]);
   const [declines, setDeclines] = useState([]);
+  const [resultPlayers, setResultPlayers] = useState([]); // {game_id,player_id}[] — ר' migrations/0024
 
   // ==== זהות אמיתית של השחקן — Supabase Auth (אימות מייל) ====
   const [session, setSession] = useState(null);
@@ -279,7 +285,7 @@ function App() {
     try {
       const d = await api.loadAll();
       setRoster(d.roster); setPending(d.pending); setAdmins(d.admins);
-      setAdminReqs(d.adminReqs); setGames(d.games); setRegs(d.regs); setDeclines(d.declines);
+      setAdminReqs(d.adminReqs); setGames(d.games); setRegs(d.regs); setDeclines(d.declines); setResultPlayers(d.resultPlayers);
       setErr("");
     } catch(e){ setErr("בעיה בחיבור לשרת. בדוק חיבור אינטרנט."); console.error(e); }
     setLoaded(true);
@@ -300,12 +306,28 @@ function App() {
     declines: declines.filter(d => d.game_id === g.id).map(d => ({ playerId: d.player_id, ts: d.ts })),
   }));
 
-  // ספירת הגעות מצטברת לכל שחקן — נספרת רק ממשחקים שננעלו. כל עוד משחק פתוח,
-  // הסימונים בו ניתנים לשינוי חופשי ולא משפיעים על העדיפות; נעילה "צורבת" אותם
-  // לתוך הספירה, פתיחה מחדש מוציאה אותם ממנה זמנית (בלי למחוק את הסימון עצמו).
+  // ספירת הגעות מצטברת לכל שחקן — שני מקורות עצמאיים, כל אחד "צורב" משחק
+  // בפני עצמו (לא תלויים זה בזה, אבל עם דה-דופליקציה לפי זוג משחק+שחקן כדי
+  // שמשחק שממלא את שני התנאים לא ייספר פעמיים):
+  // 1. נעילת נוכחות (כברירת המחדל הוותיקה) — registrations.attended=true
+  //    במשחק עם attendance_locked=true. כל עוד משחק פתוח, הסימונים בו
+  //    ניתנים לשינוי חופשי ולא משפיעים על העדיפות; נעילה "צורבת" אותם.
+  // 2. תוצאה שמורה + כוחות מפורסמים (ר' שיחה עם המשתמש — "אם משחק נכנס
+  //    להיסטוריה [=הוזנה לו תוצאה], יספר בכמות המשחקים... גם אם לא ננעל,
+  //    לפי הרשימה של הכוחות שפורסמה") — get_counted_results_players
+  //    (migrations/0024) כבר מסנן בצד השרת רק משחקים עם גם game_results
+  //    וגם teams_published=true, ומחזיר את כל מי שהיה בחלוקה (game_teams).
   const lockedGameIds = new Set(games.filter(g => g.attendance_locked).map(g => g.id));
   const attendanceCounts = {};
-  regs.forEach(r => { if (r.attended && lockedGameIds.has(r.game_id)) attendanceCounts[r.player_id] = (attendanceCounts[r.player_id]||0) + 1; });
+  const countedGamePlayer = new Set(); // "gameId|playerId" — מונע ספירה כפולה אם משחק עונה לשני המקורות גם יחד
+  const countAttendance = (gameId, playerId) => {
+    const key = gameId + "|" + playerId;
+    if (countedGamePlayer.has(key)) return;
+    countedGamePlayer.add(key);
+    attendanceCounts[playerId] = (attendanceCounts[playerId]||0) + 1;
+  };
+  regs.forEach(r => { if (r.attended && lockedGameIds.has(r.game_id)) countAttendance(r.game_id, r.player_id); });
+  resultPlayers.forEach(r => countAttendance(r.game_id, r.player_id));
 
   if (!loaded || !identityLoaded) return <div style={S.loading}>טוען…</div>;
 
@@ -1641,6 +1663,18 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   const [savingResult,setSavingResult]=useState(false);
   const [playerForm,setPlayerForm]=useState({}); // player_id -> ["win"|"loss"|"draw", ...] (5 אחרונים, חדש→ישן) — ר' migrations/0017
   const [chemistry,setChemistry]=useState({}); // player_id -> {ownWins,ownDecisive,with:{teammateId:{wins,decisive}}} — ר' migrations/0021
+  // הוספה/הסרה מחלוקת כוחות שכבר נפתחה — ר' שיחה עם המשתמש: "אחרי שמפרסם
+  // כוחות, רוצה אפשרות להוריד שחקן אם לא הגיע ולא רוצה להתחשב בו, או
+  // להוסיף שחקן שלא היה במסך". הסרה היא state מקומי בלבד (לא נוגעת
+  // בהרשמה) — "💾 שמור חלוקה" הבאה פשוט לא תכלול אותו, אז הוא לא ייספר
+  // ב-game_teams/בחישובי כימיה עתידיים. הוספה מזהה (מהרשימה המאושרת) או
+  // אורח (admin_add_guest_registration הקיים — בלי לתעד/לשמור נתונים
+  // קבועים לאורח, כמו היום).
+  const [addSplitId,setAddSplitId]=useState("");
+  const [addSplitGuestName,setAddSplitGuestName]=useState("");
+  const [addSplitGuestGrade,setAddSplitGuestGrade]=useState("");
+  const [addSplitTeam,setAddSplitTeam]=useState(1);
+  const [addingSplitPlayer,setAddingSplitPlayer]=useState(false);
   const teamCardRef = useRef(null);
   const isOpen = now >= game.opensAt;
   const hasHappened = now >= game.kickoff;
@@ -1836,6 +1870,43 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
       return { team1: [...prev.team1, player], team2: prev.team2.filter(p=>p.id!==id) };
     });
   };
+  // הסרה מקומית בלבד (לא נוגעת בהרשמה עצמה) — ר' שיחה עם המשתמש: "להוריד
+  // שחקן אם לא הגיע ולא רוצה להתחשב בו". "💾 שמור חלוקה" הבאה פשוט לא
+  // תכלול אותו יותר (admin_set_game_teams דורס את game_teams לגמרי לפי
+  // המערכים שנשלחים), אז הוא לא נספר בתוצאה/בכימיה העתידית לאותו משחק.
+  const removeFromSplit = (id) => {
+    setTeamSplit(prev => prev && { team1: prev.team1.filter(p=>p.id!==id), team2: prev.team2.filter(p=>p.id!==id) });
+  };
+  // הוספת שחקן שלא היה במסך החלוקה — מהרשימה המאושרת (נרשם אם עדיין לא
+  // רשום, כדי שגם יופיע ברשימת המשתתפים הרגילה) או אורח חד-פעמי (אותו
+  // admin_add_guest_registration הקיים, בלי שום נתון קבוע נשמר לאורח).
+  // נקבע לאיזו קבוצה ישירות כאן (לא "ממתין לשיבוץ") — זו בדיוק הבקשה:
+  // "שישאל אותי לאיזו קבוצה להוסיף אותו".
+  const addToSplit = async () => {
+    const gName = addSplitGuestName.trim();
+    if (!gName && !addSplitId) return;
+    setAddingSplitPlayer(true);
+    if (gName) {
+      const g = parseInt(addSplitGuestGrade,10);
+      const inputGrade = (addSplitGuestGrade.trim()!=="" && Number.isFinite(g) && g>=1 && g<=99) ? g : null;
+      const guestId = await callAdmin("admin_add_guest_registration", { input_game_id: game.id, input_guest_name: gName, input_grade: inputGrade, ...credArgs });
+      if (guestId) {
+        const newPlayer = { id: guestId, name: gName, grade: inputGrade || 50 };
+        setTeamSplit(prev => prev && (addSplitTeam===1 ? { ...prev, team1:[...prev.team1,newPlayer] } : { ...prev, team2:[...prev.team2,newPlayer] }));
+        setAddSplitGuestName(""); setAddSplitGuestGrade("");
+      }
+    } else {
+      if (!game.registrations.some(r=>r.playerId===addSplitId)) {
+        await callAdmin("admin_add_registration", { input_game_id: game.id, input_player_id: addSplitId, ...credArgs });
+      }
+      const p = roster.find(r=>r.id===addSplitId);
+      const newPlayer = { id: addSplitId, name: p ? p.name : "—", grade: grades[addSplitId] || 50 };
+      setTeamSplit(prev => prev && (addSplitTeam===1 ? { ...prev, team1:[...prev.team1,newPlayer] } : { ...prev, team2:[...prev.team2,newPlayer] }));
+      setAddSplitId("");
+    }
+    await refresh();
+    setAddingSplitPlayer(false);
+  };
   const saveTeamSplit = async () => {
     if (!teamSplit) return;
     await callAdmin("admin_set_game_teams", { input_game_id: game.id, input_team1_ids: teamSplit.team1.map(p=>p.id), input_team2_ids: teamSplit.team2.map(p=>p.id), ...credArgs });
@@ -1933,12 +2004,14 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
                   {formDots(p.id)}
                   <span style={S.teamPlayerName}>{p.name}</span>
                   <span style={S.teamSwapHint}>⇄</span>
+                  <span style={S.teamRemoveX} onClick={e=>{e.stopPropagation(); removeFromSplit(p.id);}} title="הסר מהחלוקה — לא יחשב במשחק הזה">✕</span>
                 </div>
               ))}
             </div>
             <div style={{...S.teamCol,background:"#f97316"}}>
               {teamSplit.team2.map(p=>(
                 <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,2)} title="הקש להעברה לקבוצה 1">
+                  <span style={S.teamRemoveX} onClick={e=>{e.stopPropagation(); removeFromSplit(p.id);}} title="הסר מהחלוקה — לא יחשב במשחק הזה">✕</span>
                   <span style={S.teamSwapHint}>⇄</span>
                   <span style={S.teamPlayerName}>{p.name}</span>
                   {formDots(p.id)}
@@ -1951,6 +2024,25 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
             <div style={{...S.teamSplitFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teamSplit.team1.length} שחקנים · דירוג {teamSplit.team1.reduce((s,p)=>s+p.grade,0)}</div>
             <div style={{...S.teamSplitFooter,background:"#ffedd5",color:"#7c2d12"}}>{teamSplit.team2.length} שחקנים · דירוג {teamSplit.team2.reduce((s,p)=>s+p.grade,0)}</div>
           </div>
+          {(() => {
+            const splitIds = new Set([...teamSplit.team1, ...teamSplit.team2].map(p=>p.id));
+            const rosterOptionsForAdd = roster.filter(r => !splitIds.has(r.id)).slice().sort((a,b)=>a.name.localeCompare(b.name,"he"));
+            return (
+              <div style={{display:"flex",gap:6,alignItems:"center",marginTop:8,flexWrap:"wrap"}}>
+                <select style={S.selectSm} value={addSplitId} onChange={e=>{setAddSplitId(e.target.value); if(e.target.value){setAddSplitGuestName("");}}}>
+                  <option value="">+ הוסף שחקן קיים…</option>
+                  {rosterOptionsForAdd.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <input style={S.selectSm} placeholder="או שם אורח…" value={addSplitGuestName} onChange={e=>{setAddSplitGuestName(e.target.value); if(e.target.value){setAddSplitId("");}}} />
+                <input style={{...S.input,width:56,padding:6}} type="number" min="1" max="99" placeholder="50" value={addSplitGuestGrade} onChange={e=>setAddSplitGuestGrade(e.target.value)} title="דירוג לאורח (אופציונלי)" />
+                <select style={S.selectSm} value={addSplitTeam} onChange={e=>setAddSplitTeam(Number(e.target.value))}>
+                  <option value={1}>לקבוצה 1</option>
+                  <option value={2}>לקבוצה 2</option>
+                </select>
+                <button className="btn small" onClick={addToSplit} disabled={addingSplitPlayer || (!addSplitId && !addSplitGuestName.trim())}>{addingSplitPlayer?"מוסיף…":"הוסף"}</button>
+              </div>
+            );
+          })()}
           <div style={{display:"flex",gap:6,marginTop:8}}>
             <button className="btn small" style={{flex:1}} onClick={reshuffleTeams}>🔀 ערבב מחדש</button>
             <button className="btn primary small" style={{flex:1}} onClick={saveTeamSplit}>💾 שמור חלוקה</button>
@@ -2556,6 +2648,7 @@ const S = {
   teamPlayerName: { flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight:700 },
   teamGradeBadge: { display:"inline-flex", alignItems:"center", justifyContent:"center", width:30, height:30, borderRadius:"50%", background:"#5b6b7a", fontSize:13, fontWeight:800, color:"#fff", flexShrink:0 },
   teamSwapHint: { opacity:0.55, fontSize:13, flexShrink:0 },
+  teamRemoveX: { opacity:0.7, fontSize:13, flexShrink:0, padding:"2px 4px", cursor:"pointer" },
   teamSplitFooterRow: { display:"flex" },
   teamSplitFooter: { flex:1, textAlign:"center", fontWeight:800, fontSize:12, padding:"10px 4px" },
   // עטיפה עם height:0+overflow:hidden (לא position:absolute/fixed) —

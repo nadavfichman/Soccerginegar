@@ -1859,7 +1859,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
             <button className="btn primary small" style={{flex:1}} onClick={saveTeamSplit}>💾 שמור חלוקה</button>
           </div>
           <button className="btn waBtn" style={{width:"100%",marginTop:6}} onClick={shareTeamsImage} disabled={sharingTeams}>{sharingTeams?"מכין תמונה…":"📤 שיתוף לוואטסאפ"}</button>
-          <button className="btn small" style={{width:"100%",marginTop:6}} onClick={()=>setGameField({teams_published:!game.teamsPublished})}>{game.teamsPublished?"הסתר כוחות מהשחקנים":"📢 פרסם כוחות לשחקנים"}</button>
+          <button className="btn small" style={{width:"100%",marginTop:6}} onClick={()=>{ if (game.teamsPublished || window.confirm("לפרסם את הכוחות לשחקנים? הם יוכלו לראות את החלוקה באפליקציה.")) setGameField({teams_published:!game.teamsPublished}); }}>{game.teamsPublished?"הסתר כוחות מהשחקנים":"📢 פרסם כוחות לשחקנים"}</button>
           {hasHappened && (
             <div style={{marginTop:10,paddingTop:10,borderTop:"1px dashed rgba(255,255,255,.4)"}}>
               {gameResult && (

@@ -841,7 +841,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
   // לאדמין-על, שיש לו גם "משחקים" וגם "שחקנים"; מנהל רגיל רואה רק משחקים,
   // אין טעם בטאבים בשבילו. "insights"/סטטיסטיקה עתידית — טאב שלישי שיתווסף
   // כשיהיה לו תוכן אמיתי, לא placeholder ריק עכשיו.
-  const [activeTab,setActiveTab]=useState("games"); // "games" | "players"
+  const [activeTab,setActiveTab]=useState("games"); // "games" | "history" | "players"
   // דירוגי שחקנים לחלוקת כוחות (ר' migrations/0014) — נשמרים בטבלה נעולה,
   // בלי SELECT ציבורי, נטענים רק כאן דרך RPC אדמין אחרי התחברות מוצלחת.
   const [grades,setGrades]=useState({});
@@ -925,6 +925,9 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
           <button style={activeTab==="games"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("games")}>
             ⚽ משחקים
           </button>
+          <button style={activeTab==="history"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("history")}>
+            📜 היסטוריה
+          </button>
           <button style={activeTab==="players"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("players")}>
             👥 שחקנים
           </button>
@@ -934,6 +937,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
       {isSuper ? (
         <>
           {activeTab==="games" && <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />}
+          {activeTab==="history" && <GameResultsHistory cred={cred} roster={roster} />}
           {activeTab==="players" && (
             <>
               <PendingRequests {...{ pending, roster, refresh, cred }} />
@@ -1450,40 +1454,34 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grade
   const activeGames = sorted.filter(g => !g.attendanceLocked);
   const oldGames = sorted.filter(g => g.attendanceLocked);
   return (
-    <>
-      {/* ר' שיחה עם המשתמש — "כאשר בוחר משחקים נפתחים על ההיסטוריה של
-          התוצאות ההיסטוריות, כמו באפליקציה של דרור": היסטוריית התוצאות
-          מוצגת ראשונה, מיד בכניסה לטאב "משחקים", לא מתחת לרשימת המשחקים
-          הפעילים ולא מאחורי עוד קליק-הרחבה. */}
-      <GameResultsHistory cred={cred} roster={roster} />
-      <section style={S.card}>
-        <div style={S.rowBetween}>
-          <h2 style={S.h2}>משחקים</h2>
-          <button className="btn primary small" onClick={()=>setShowNew(v=>!v)}>{showNew?"בטל":"+ משחק"}</button>
-        </div>
-        {showNew && <NewGameForm onAdd={addGame} />}
-        {activeGames.map(g=>(
-          <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} refreshGrades={refreshGrades} />
-        ))}
-        {oldGames.length>0 && (
-          <>
-            <button className="btn small" style={{marginTop:10,width:"100%"}} onClick={()=>setShowOld(v=>!v)}>
-              משחקים קודמים ונעולים ({oldGames.length}) {showOld?"▲":"▼"}
-            </button>
-            {showOld && oldGames.map(g=>(
-              <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} refreshGrades={refreshGrades} />
-            ))}
-          </>
-        )}
-      </section>
-    </>
+    <section style={S.card}>
+      <div style={S.rowBetween}>
+        <h2 style={S.h2}>משחקים</h2>
+        <button className="btn primary small" onClick={()=>setShowNew(v=>!v)}>{showNew?"בטל":"+ משחק"}</button>
+      </div>
+      {showNew && <NewGameForm onAdd={addGame} />}
+      {activeGames.map(g=>(
+        <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} refreshGrades={refreshGrades} />
+      ))}
+      {oldGames.length>0 && (
+        <>
+          <button className="btn small" style={{marginTop:10,width:"100%"}} onClick={()=>setShowOld(v=>!v)}>
+            משחקים קודמים ונעולים ({oldGames.length}) {showOld?"▲":"▼"}
+          </button>
+          {showOld && oldGames.map(g=>(
+            <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} refreshGrades={refreshGrades} />
+          ))}
+        </>
+      )}
+    </section>
   );
 }
 
-// היסטוריית תוצאות — מוצגת ראשונה בטאב "משחקים" (ר' AdminGames למעלה),
-// לא מתקפלת ולא דורשת קליק נוסף. טעינה אוטומטית ב-mount. כל שורה ניתנת
-// להרחבה (ר' שיחה עם המשתמש — "כאשר נכנסים למשחק, ניתן גם לראות את
-// הכוחות שהיו באותו משחק") — מציגה את שתי הקבוצות שנשמרו לאותו משחק
+// היסטוריית תוצאות — טאב עליון קבוע משלה ("📜 היסטוריה", ליד "⚽ משחקים"/
+// "👥 שחקנים" ב-AdminView, ר' שיחה עם המשתמש). טעינה אוטומטית ב-mount —
+// הכניסה לטאב עצמה היא כבר הפעולה המפורשת, אין צורך בעוד כפתור-הרחבה.
+// כל שורה ניתנת להרחבה (ר' שיחה עם המשתמש — "כאשר נכנסים למשחק, ניתן גם
+// לראות את הכוחות שהיו באותו משחק") — מציגה את שתי הקבוצות שנשמרו לאותו משחק
 // (admin_get_game_teams, כבר קיים, ר' migrations/0014), נטען רק בלחיצה
 // ונשמר ב-cache מקומי כדי לא לשלוף שוב בכל toggle.
 function GameResultsHistory({ cred, roster }) {

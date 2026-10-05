@@ -2421,7 +2421,12 @@ const S = {
   // מעבר-טאבים רגיל בראש התוכן, לא position:fixed (ר' שיחה עם המשתמש —
   // fixed/bottom:0 מכוסה בפועל ע"י סרגל הכלים של חלק מדפדפני המובייל,
   // שחוטף את ההקשות לפני שהן מגיעות לכפתורים שלנו).
-  tabSwitcher: { display:"flex", gap:6, background:"#e2e8e2", padding:4, borderRadius:10 },
+  // position:sticky (לא fixed!) — נדבק לראש המסך בזמן גלילה למטה, אבל
+  // נשאר חלק מה-flow הרגיל של הדף. זה שונה מהותית מ-position:fixed
+  // שכבר נכשל בתחתית המסך (ר' שיחה עם המשתמש) — שם הבעיה הייתה סרגל-כלים
+  // קבוע של הדפדפן בתחתית שחוטף הקשות; sticky בראש המסך הוא דפוס CSS
+  // תקני ונתמך בכל דפדפן מובייל, בלי אותה התנגשות.
+  tabSwitcher: { display:"flex", gap:6, background:"#e2e8e2", padding:4, borderRadius:10, position:"sticky", top:0, zIndex:10, boxShadow:"0 2px 6px rgba(0,0,0,.08)" },
   tabSwitcherBtn: { flex:1, padding:"9px 0", border:"none", borderRadius:8, background:"none", fontSize:14, fontWeight:700, color:"#4b5563", cursor:"pointer", fontFamily:"inherit" },
   tabSwitcherBtnActive: { flex:1, padding:"9px 0", border:"none", borderRadius:8, background:"#166534", fontSize:14, fontWeight:800, color:"#fff", cursor:"pointer", fontFamily:"inherit" },
   card: { background:"#fff", borderRadius:14, padding:16, boxShadow:"0 1px 3px rgba(0,0,0,.06)" },

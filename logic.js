@@ -82,11 +82,13 @@
   }
 
   // ==== חלוקת כוחות ====
-  // בלי פילוח תפקידים (שוער/בלם וכו', לא קיים ב-Soccerginegar) — שלב A בלבד.
-  // פתרון מדויק (לא היוריסטי): "לחלק n שחקנים לתת-קבוצה בגודל קבוע עם סכום
-  // הכי קרוב לחצי" הוא subset-sum עם מגבלת גודל — פותר בתכנון דינמי, לא
-  // ניחוש-אקראי-הכי-טוב. בגבולות האפליקציה (MAX_PLAYERS=22, דירוג 1-99)
-  // טבלת ה-DP קטנה (עד כ-11×2178 תאים) ורצה באלפיות שנייה.
+  // אימוץ מדויק (לא ניחוש) של אלגוריתם האיזון של TeamPicker (אפליקציית
+  // האח, DivideCollaboration) — נקרא קוד המקור הציבורי במפורש (ר' "עדכון 6"
+  // ב-plan). לא DP — חיפוש Monte Carlo: 200 ניסיונות אקראיים של חלוקה
+  // ל-2 קבוצות, ובכל ניסיון ציון-איזון משוקלל משלושה גורמים (דירוג/כימיה/
+  // win-rate אישי), נבחר הניסיון עם הציון הכי נמוך (הכי קרוב ל-50% סיכוי
+  // ניצחון לכל קבוצה). בלי פילוח תפקידים (שוער/בלם וכו') — לא קיים
+  // ב-Soccerginegar, הבאקט "אחרים" של דרור מתנוון ממילא לערבוב-אקראי-ואז-slice.
   function shuffleArray(arr) {
     const a = [...arr];
     for (let i = a.length - 1; i > 0; i--) {
@@ -96,42 +98,76 @@
     return a;
   }
   function sumGrade(players) { return players.reduce((s, p) => s + (p.grade || 0), 0); }
-  function splitTeamsByGrade(players) {
-    if (!players || players.length === 0) return { team1: [], team2: [] };
-    // shuffle לפני ה-DP כדי ש"ערבב מחדש" ימשיך לתת חלוקות-שחקנים שונות
-    // כשיש כמה פתרונות אופטימליים שווי-הפרש — אבל הסכום עצמו תמיד אופטימלי.
-    const shuffled = shuffleArray(players);
-    const n = shuffled.length, size1 = Math.ceil(n / 2);
-    const grades = shuffled.map(p => p.grade || 0);
-    const total = sumGrade(shuffled);
-    // dp[k][s] = האם קיימת תת-קבוצה בגודל k עם סכום s (מבין הפריטים שעובדו עד כה)
-    // from[k][s] = אינדקס הפריט שבזכותו הגענו לראשונה ל-(k,s) — לשחזור התת-קבוצה
-    const dp = Array.from({ length: size1 + 1 }, () => new Array(total + 1).fill(false));
-    const from = Array.from({ length: size1 + 1 }, () => new Array(total + 1).fill(-1));
-    dp[0][0] = true;
-    for (let i = 0; i < n; i++) {
-      const g = grades[i];
-      for (let k = Math.min(i + 1, size1); k >= 1; k--) {
-        for (let s = total; s >= g; s--) {
-          if (!dp[k][s] && dp[k - 1][s - g]) { dp[k][s] = true; from[k][s] = i; }
-        }
+
+  // rows: [{player_id, teammate_id, games_with, wins_with, decisive_with}]
+  // (מ-admin_get_player_chemistry) — שורת "עצמי" (teammate_id===player_id)
+  // מקודדת win-rate אישי כללי, שאר השורות הן win-rate "ביחד עם" שותף ספציפי.
+  function buildChemistryMap(rows) {
+    const map = {};
+    (rows || []).forEach(r => {
+      if (!map[r.player_id]) map[r.player_id] = { ownWins: 0, ownDecisive: 0, with: {} };
+      if (r.teammate_id === r.player_id) {
+        map[r.player_id].ownWins = r.wins_with;
+        map[r.player_id].ownDecisive = r.decisive_with;
+      } else {
+        map[r.player_id].with[r.teammate_id] = { wins: r.wins_with, decisive: r.decisive_with };
       }
+    });
+    return map;
+  }
+  function rate(wins, decisive) { return decisive > 0 ? Math.round(wins * 100 / decisive) : 0; }
+  // "כימיה" קבוצתית: סכום win-rate האישי של כל שחקן ספציפית במשחקים שבהם
+  // כל אחד מחבריו הנוכחיים לקבוצה היה חבר-קבוצה שלו בעבר (לא משנה נגד מי —
+  // יחסי "נגד" קיימים אצל דרור אבל לא בשימוש בפועל בציון האיזון, אז גם כאן לא).
+  function teamChemistry(chem, ids) {
+    let wins = 0, decisive = 0;
+    ids.forEach(id => {
+      const p = chem[id]; if (!p) return;
+      ids.forEach(other => {
+        if (other === id) return;
+        const w = p.with[other];
+        if (w) { wins += w.wins; decisive += w.decisive; }
+      });
+    });
+    return rate(wins, decisive);
+  }
+  function teamWinRate(chem, ids) {
+    let wins = 0, decisive = 0;
+    ids.forEach(id => { const p = chem[id]; if (p) { wins += p.ownWins; decisive += p.ownDecisive; } });
+    return rate(wins, decisive);
+  }
+  // יחס שווה בין שלושת הגורמים (לפי בקשת המשתמש — לא ברירת המחדל 20/40/40 של דרור)
+  const CHEM_WEIGHTS = { grade: 1 / 3, chemistry: 1 / 3, winRate: 1 / 3 };
+  function balanceScore(chem, players, ids1, ids2) {
+    const g1 = sumGrade(players.filter(p => ids1.includes(p.id)));
+    const g2 = sumGrade(players.filter(p => ids2.includes(p.id)));
+    // בלי נתונים (0 משחקים רלוונטיים) → ניטרלי 50%, לא 0 — כדי לא להטות
+    const c1 = teamChemistry(chem, ids1) || 50, c2 = teamChemistry(chem, ids2) || 50;
+    const w1 = teamWinRate(chem, ids1) || 50, w2 = teamWinRate(chem, ids2) || 50;
+    const totalGrade = g1 + g2;
+    const gradeAdv = totalGrade > 0 ? (g1 * 100 / totalGrade - 50) : 0;
+    const weighted = (c1 - c2) * CHEM_WEIGHTS.chemistry + (w1 - w2) * CHEM_WEIGHTS.winRate + gradeAdv * CHEM_WEIGHTS.grade;
+    const prob = Math.max(20, Math.min(80, Math.round(50 + weighted)));
+    return Math.abs(prob - 50);
+  }
+  function splitTeamsByChemistry(players, chemistry, attempts) {
+    if (!players || players.length === 0) return { team1: [], team2: [] };
+    const chem = chemistry || {};
+    const n = attempts || 200;
+    let best = null, bestScore = Infinity;
+    for (let i = 0; i < n; i++) {
+      const shuffled = shuffleArray(players);
+      const half = Math.ceil(shuffled.length / 2);
+      const team1 = shuffled.slice(0, half), team2 = shuffled.slice(half);
+      const score = balanceScore(chem, players, team1.map(p => p.id), team2.map(p => p.id));
+      if (score < bestScore) { bestScore = score; best = { team1, team2 }; }
     }
-    let bestS = 0, bestDiff = Infinity;
-    for (let s = 0; s <= total; s++) {
-      if (dp[size1][s]) { const diff = Math.abs(total - 2 * s); if (diff < bestDiff) { bestDiff = diff; bestS = s; } }
-    }
-    const idx1 = new Set();
-    let k = size1, s = bestS;
-    while (k > 0) { const i = from[k][s]; idx1.add(i); s -= grades[i]; k--; }
-    const team1 = shuffled.filter((_, i) => idx1.has(i));
-    const team2 = shuffled.filter((_, i) => !idx1.has(i));
-    return { team1, team2 };
+    return best;
   }
 
   return {
     fmt, fmtDateTime, fmtTime, dateOnly, dayName, countdown,
     normPhone, validName, normName, validPhone, normEmail, validEmail, sameEmail,
-    findDuplicate, tierRank, sortRegs, splitTeamsByGrade,
+    findDuplicate, tierRank, sortRegs, buildChemistryMap, splitTeamsByChemistry,
   };
 }));

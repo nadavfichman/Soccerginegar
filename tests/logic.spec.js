@@ -6,7 +6,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
   normPhone, validName, normName, validPhone, normEmail, validEmail, sameEmail,
-  findDuplicate, tierRank, sortRegs, splitTeamsByGrade,
+  findDuplicate, tierRank, sortRegs, buildChemistryMap, splitTeamsByChemistry,
 } = require("../logic.js");
 
 // ---- טלפון/שם/מייל ----
@@ -132,72 +132,80 @@ test("sortRegs: בלי attendanceCounts, זמן הרשמה שובר שוויון
   assert.deepEqual(sorted.map(r=>r.player_id), ["a", "b"]);
 });
 
-// ---- splitTeamsByGrade ----
+// ---- buildChemistryMap / splitTeamsByChemistry ----
+// אימוץ מדויק של אלגוריתם האיזון של TeamPicker (DivideCollaboration) — ר'
+// "עדכון 6" ב-plan. Monte Carlo (לא DP), ציון משוקלל (דירוג/כימיה/win-rate
+// אישי, 1/3 כל אחד), 200 ניסיונות כברירת מחדל.
 
-test("splitTeamsByGrade: גדלי הקבוצות תקינים (זוגי)", () => {
+test("buildChemistryMap: בונה שורת 'עצמי' (win-rate אישי) ושורות 'עם' שותף", () => {
+  const rows = [
+    { player_id: "a", teammate_id: "a", games_with: 10, wins_with: 7, decisive_with: 10 },
+    { player_id: "a", teammate_id: "b", games_with: 5, wins_with: 4, decisive_with: 5 },
+  ];
+  const chem = buildChemistryMap(rows);
+  assert.equal(chem.a.ownWins, 7);
+  assert.equal(chem.a.ownDecisive, 10);
+  assert.deepEqual(chem.a.with.b, { wins: 4, decisive: 5 });
+});
+
+test("splitTeamsByChemistry: גדלי הקבוצות תקינים (זוגי)", () => {
   const players = [1,2,3,4,5,6].map(i => ({ id: "p"+i, grade: 50 }));
-  const { team1, team2 } = splitTeamsByGrade(players);
+  const { team1, team2 } = splitTeamsByChemistry(players, {});
   assert.equal(team1.length, 3);
   assert.equal(team2.length, 3);
 });
 
-test("splitTeamsByGrade: גדלי הקבוצות תקינים (אי-זוגי — העודף לקבוצה 1)", () => {
+test("splitTeamsByChemistry: גדלי הקבוצות תקינים (אי-זוגי — העודף לקבוצה 1)", () => {
   const players = [1,2,3,4,5].map(i => ({ id: "p"+i, grade: 50 }));
-  const { team1, team2 } = splitTeamsByGrade(players);
+  const { team1, team2 } = splitTeamsByChemistry(players, {});
   assert.equal(team1.length, 3);
   assert.equal(team2.length, 2);
 });
 
-test("splitTeamsByGrade: מוצא חלוקה מאוזנת מושלמת כשהיא קיימת", () => {
-  // 10+40=50 מול 20+30=50 — הפרש 0 ודאי (לא "כמעט תמיד") כי האלגוריתם מדויק (DP), לא רנדומלי
-  const players = [
-    { id: "a", grade: 10 }, { id: "b", grade: 20 },
-    { id: "c", grade: 30 }, { id: "d", grade: 40 },
-  ];
-  const { team1, team2 } = splitTeamsByGrade(players);
-  const sum = (t) => t.reduce((s,p)=>s+p.grade, 0);
-  assert.equal(Math.abs(sum(team1) - sum(team2)), 0);
-});
-
-test("splitTeamsByGrade: תמיד מוצא את ההפרש האופטימלי המתמטי (מול ברוטפורס)", () => {
-  // משווה את התוצאה של האלגוריתם (DP) מול בדיקה ממצה של כל החלוקות האפשריות
-  // בגודל קבוע — מוודא שהאלגוריתם לא רק "טוב" אלא באמת אופטימלי, לא היוריסטי.
-  function bruteForceMinDiff(players) {
-    const n = players.length, size1 = Math.ceil(n / 2);
-    const grades = players.map(p => p.grade);
-    let best = Infinity;
-    const total = grades.reduce((s, g) => s + g, 0);
-    const combo = (start, chosen, sum) => {
-      if (chosen.length === size1) {
-        best = Math.min(best, Math.abs(total - 2 * sum));
-        return;
-      }
-      if (start >= n) return;
-      combo(start + 1, [...chosen, start], sum + grades[start]);
-      combo(start + 1, chosen, sum);
-    };
-    combo(0, [], 0);
-    return best;
-  }
-  for (let trial = 0; trial < 8; trial++) {
-    const n = 6 + (trial % 5); // 6..10 שחקנים
-    const players = Array.from({ length: n }, (_, i) => ({ id: "p" + i, grade: 1 + Math.floor(Math.random() * 99) }));
-    const { team1, team2 } = splitTeamsByGrade(players);
-    const sum = (t) => t.reduce((s, p) => s + p.grade, 0);
-    const actualDiff = Math.abs(sum(team1) - sum(team2));
-    assert.equal(actualDiff, bruteForceMinDiff(players), "n="+n+" grades="+JSON.stringify(players.map(p=>p.grade)));
-  }
-});
-
-test("splitTeamsByGrade: לא מאבד ולא משכפל שחקנים", () => {
+test("splitTeamsByChemistry: לא מאבד ולא משכפל שחקנים", () => {
   const players = [1,2,3,4,5,6,7].map(i => ({ id: "p"+i, grade: 40+i }));
-  const { team1, team2 } = splitTeamsByGrade(players);
+  const { team1, team2 } = splitTeamsByChemistry(players, {});
   const ids = [...team1, ...team2].map(p=>p.id).sort();
   assert.deepEqual(ids, players.map(p=>p.id).sort());
 });
 
-test("splitTeamsByGrade: רשימה ריקה לא קורסת", () => {
-  const { team1, team2 } = splitTeamsByGrade([]);
+test("splitTeamsByChemistry: רשימה ריקה לא קורסת", () => {
+  const { team1, team2 } = splitTeamsByChemistry([], {});
   assert.deepEqual(team1, []);
   assert.deepEqual(team2, []);
+});
+
+test("splitTeamsByChemistry: בלי נתוני כימיה/היסטוריה בכלל, עדיין מאזן לפי דירוג", () => {
+  // דירוג 1/3 מהמשקל, אבל בלי כימיה/win-rate (נופלים לניטרלי 50/50 משני
+  // הצדדים) הם לא תורמים יתרון לאף קבוצה — אז דירוג הוא הגורם המכריע היחיד.
+  const players = [
+    { id: "a", grade: 10 }, { id: "b", grade: 20 },
+    { id: "c", grade: 30 }, { id: "d", grade: 40 },
+  ];
+  const { team1, team2 } = splitTeamsByChemistry(players, {}, 300);
+  const sum = (t) => t.reduce((s,p)=>s+p.grade, 0);
+  assert.equal(Math.abs(sum(team1) - sum(team2)), 0);
+});
+
+test("splitTeamsByChemistry: כימיה חזקה בין שני שחקנים נוטה לפזר אותם לקבוצות שונות (איזון, לא שיבוץ-חברים)", () => {
+  // a ו-b ניצחו תמיד ביחד (10/10) — אם ישתבצו יחד, הקבוצה שלהם תקבל יתרון-כימיה
+  // גדול (~100% מול 50% ניטרלי לקבוצה השנייה), מה שמרחיק מאיזון (ציון גבוה).
+  // לפזר אותם לקבוצות שונות משאיר כימיה ניטרלית בשני הצדדים (ציון 0, מאוזן
+  // לחלוטין) — בדיוק המטרה של דרור: לא "לשבץ חברים", אלא למנוע מקבוצה אחת
+  // לקבל יתרון היסטורי-מוכח. ההתנהגות הזו (לא האינטואיטיבית למבט ראשון) היא
+  // נכונה ומכוונת.
+  const players = [1,2,3,4,5,6].map(i => ({ id: "p"+i, grade: 50 }));
+  const chem = buildChemistryMap([
+    { player_id: "p1", teammate_id: "p2", games_with: 10, wins_with: 10, decisive_with: 10 },
+    { player_id: "p2", teammate_id: "p1", games_with: 10, wins_with: 10, decisive_with: 10 },
+  ]);
+  let apart = 0;
+  const trials = 30;
+  for (let i = 0; i < trials; i++) {
+    const { team1, team2 } = splitTeamsByChemistry(players, chem, 200);
+    const bothIn1 = team1.some(p=>p.id==="p1") && team1.some(p=>p.id==="p2");
+    const bothIn2 = team2.some(p=>p.id==="p1") && team2.some(p=>p.id==="p2");
+    if (!bothIn1 && !bothIn2) apart++;
+  }
+  assert.ok(apart > trials * 0.9, "apart="+apart+"/"+trials+" (ציפייה: כמעט תמיד מפוזרים)");
 });

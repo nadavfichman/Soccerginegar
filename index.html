@@ -68,7 +68,7 @@ const MAX_PLAYERS = 22;
 const {
   fmt, fmtDateTime, fmtTime, dateOnly, dayName, countdown,
   normPhone, validName, normName, validPhone, normEmail, validEmail, sameEmail,
-  findDuplicate, tierRank, sortRegs, splitTeamsByGrade,
+  findDuplicate, tierRank, sortRegs, buildChemistryMap, splitTeamsByChemistry,
 } = AppLogic;
 
 // שולח רשומת שגיאה ל-Supabase (best effort — לא זורק, לא חוסם את המשתמש) כדי
@@ -1554,6 +1554,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   const [score1,setScore1]=useState(""); const [score2,setScore2]=useState("");
   const [savingResult,setSavingResult]=useState(false);
   const [playerForm,setPlayerForm]=useState({}); // player_id -> ["win"|"loss"|"draw", ...] (5 אחרונים, חדש→ישן) — ר' migrations/0017
+  const [chemistry,setChemistry]=useState({}); // player_id -> {ownWins,ownDecisive,with:{teammateId:{wins,decisive}}} — ר' migrations/0021
   const teamCardRef = useRef(null);
   const isOpen = now >= game.opensAt;
   const hasHappened = now >= game.kickoff;
@@ -1694,19 +1695,24 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
     // (ר' migrations/0016, admin_get_game_result)
     // פורמה (5 תוצאות אחרונות לכל שחקן, ר' migrations/0017) נטענת באותה
     // קריאת פתיחה — נגזרת מ-game_teams/game_results הקיימים, בלי טבלה חדשה.
-    const [saved, result, form] = await Promise.all([
+    // נתוני כימיה (ר' migrations/0021, שלב C) — שורות גולמיות, האיזון
+    // (splitTeamsByChemistry) רץ בצד הלקוח, בלי round-trip נוסף לכל ניסיון.
+    const [saved, result, form, chemRows] = await Promise.all([
       callAdmin("admin_get_game_teams", { input_game_id: game.id, ...credArgs }),
       callAdmin("admin_get_game_result", { input_game_id: game.id, ...credArgs }),
       callAdmin("admin_get_player_form", { input_player_ids: eligibleForSplit.map(e=>e.id), ...credArgs }),
+      callAdmin("admin_get_player_chemistry", { input_player_ids: eligibleForSplit.map(e=>e.id), ...credArgs }),
     ]);
     setTeamsLoading(false);
+    const chemMap = buildChemistryMap(chemRows);
+    setChemistry(chemMap);
     const savedRows = saved || [];
     if (savedRows.length > 0) {
       const team1Ids = new Set(savedRows.filter(r=>r.team===1).map(r=>r.player_id));
       const team2Ids = new Set(savedRows.filter(r=>r.team===2).map(r=>r.player_id));
       setTeamSplit({ team1: eligibleForSplit.filter(e=>team1Ids.has(e.id)), team2: eligibleForSplit.filter(e=>team2Ids.has(e.id)) });
     } else {
-      setTeamSplit(splitTeamsByGrade(eligibleForSplit));
+      setTeamSplit(splitTeamsByChemistry(eligibleForSplit, chemMap));
     }
     const resultRow = (result||[])[0];
     if (resultRow) {
@@ -1727,7 +1733,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
     setSavingResult(false);
     if (ok) setGameResult({ team1_score: s1, team2_score: s2 });
   };
-  const reshuffleTeams = () => setTeamSplit(splitTeamsByGrade(eligibleForSplit));
+  const reshuffleTeams = () => setTeamSplit(splitTeamsByChemistry(eligibleForSplit, chemistry));
   const swapPlayer = (id, fromTeam) => {
     setTeamSplit(prev => {
       if (!prev) return prev;

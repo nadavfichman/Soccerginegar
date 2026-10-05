@@ -1488,7 +1488,6 @@ function PendingRequestRow({ req, onApprove, onReject }) {
 
 function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }) {
   const [showNew,setShowNew]=useState(false);
-  const [showOld,setShowOld]=useState(false);
   // משחק שכבר יש לו תוצאה שמורה (admin_set_game_result) "נצרב" להיסטוריה —
   // נעלם לגמרי מטאב "משחקים" (גם מהרשימה הפעילה וגם מ"משחקים קודמים
   // ונעולים"), לא רק מתקפל, ונשאר נגיש רק דרך טאב "📜 היסטוריה" (ר' שיחה
@@ -1517,32 +1516,25 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grade
     setShowNew(false); await refresh();
   };
   const sorted = [...games].sort((a,b)=>a.kickoff-b.kickoff).filter(g => !resultGameIds.has(g.id));
-  // משחקים נעולים (נוכחות סופית, "היסטוריה") מתקפלים כברירת מחדל — לא
-  // נמחקים ולא נעלמים מה-DB (attendanceCounts ב-App עדיין תלוי בהם
-  // לעדיפות "מתמיד" של משחקים עתידיים), רק לא תופסים מקום במסך כברירת
-  // מחדל. ר' שיחה עם המשתמש.
-  const activeGames = sorted.filter(g => !g.attendanceLocked);
-  const oldGames = sorted.filter(g => g.attendanceLocked);
+  // ר' שיחה עם המשתמש — "אין צורך בנושא של משחקים קודמים ונעולים, כי זה
+  // יופיע בהיסטוריה... רוצה רק משחק אחד להתקיים. אחרי שמזין לו תוצאה הכל
+  // עובר להיסטוריה וכל המסך של הכנת משחק חדש נפתח": "משחקים קודמים
+  // ונעולים" (לפי attendance_locked) הוסר כליל — לא נחוץ יותר, טאב
+  // "📜 היסטוריה" כבר מציג כל מה שהסתיים (resultGameIds לעיל כבר מסנן
+  // אותם מכאן). כשאין אף משחק פתוח (sorted ריק) טופס "הכן משחק חדש"
+  // נפתח אוטומטית במקום לחכות ללחיצה על "+ משחק" — ברגע שנוצר משחק,
+  // sorted מתעדכן ל-1 והטופס נסגר מעצמו (showNew כבר false).
+  const hasOpenGame = sorted.length > 0;
   return (
     <section style={S.card}>
       <div style={S.rowBetween}>
         <h2 style={S.h2}>משחקים</h2>
-        <button className="btn primary small" onClick={()=>setShowNew(v=>!v)}>{showNew?"בטל":"+ משחק"}</button>
+        {hasOpenGame && <button className="btn primary small" onClick={()=>setShowNew(v=>!v)}>{showNew?"בטל":"+ משחק"}</button>}
       </div>
-      {showNew && <NewGameForm onAdd={addGame} />}
-      {activeGames.map(g=>(
+      {(showNew || !hasOpenGame) && <NewGameForm onAdd={addGame} />}
+      {sorted.map(g=>(
         <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} refreshGrades={refreshGrades} />
       ))}
-      {oldGames.length>0 && (
-        <>
-          <button className="btn small" style={{marginTop:10,width:"100%"}} onClick={()=>setShowOld(v=>!v)}>
-            משחקים קודמים ונעולים ({oldGames.length}) {showOld?"▲":"▼"}
-          </button>
-          {showOld && oldGames.map(g=>(
-            <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} refreshGrades={refreshGrades} />
-          ))}
-        </>
-      )}
     </section>
   );
 }

@@ -434,12 +434,29 @@ begin
   return true;
 end; $$;
 
+-- מחזירה גם mvp_player_id (ר' migrations/0026) — דורש drop כי סוג ההחזרה משתנה.
+drop function if exists admin_get_game_result(text, text, text, text);
 create or replace function admin_get_game_result(input_game_id text, input_pw text, input_phone text, input_pin text)
-returns table(team1_score integer, team2_score integer) language plpgsql security definer as $$
+returns table(team1_score integer, team2_score integer, mvp_player_id text)
+language plpgsql security definer as $$
 declare v_role text;
 begin
   v_role := require_admin(input_pw, input_phone, input_pin);
-  return query select gr.team1_score, gr.team2_score from game_results gr where gr.game_id = input_game_id;
+  return query select gr.team1_score, gr.team2_score, gr.mvp_player_id from game_results gr where gr.game_id = input_game_id;
+end; $$;
+
+-- סימון "שחקן מצטיין" למשחק (ר' migrations/0026, בהשוואה לאפליקציה של
+-- דרור) — RPC נפרד מ-admin_set_game_result בכוונה, כדי ששמירת תוצאה
+-- רגילה לעולם לא תלויה בזה שהמיגרציה הזו רצה.
+create or replace function admin_set_game_mvp(input_game_id text, input_player_id text, input_pw text, input_phone text, input_pin text)
+returns boolean language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  if not exists (select 1 from game_results where game_id = input_game_id) then raise exception 'result_not_saved'; end if;
+  update game_results set mvp_player_id = input_player_id where game_id = input_game_id;
+  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_set_game_mvp', jsonb_build_object('game_id', input_game_id, 'player_id', input_player_id));
+  return true;
 end; $$;
 
 -- כל התוצאות בעסקה אחת, כולל תאריך וספירת שחקנים לכל קבוצה — לרשימת
@@ -450,8 +467,11 @@ end; $$;
 -- team2_player_ids מצורפים ישירות לשורה כך שהרחבת-שורה בצד הלקוח (הצגת
 -- הכוחות) לא צריכה round-trip נוסף — admin_get_game_teams ממילא לא
 -- עובד על מזהי משחק מיובאים.
+-- מחזירה גם mvp_player_id (ר' migrations/0026) — null קבוע למשחקים
+-- מיובאים מ-TeamPicker (legacy_player_games אין לה עמודת MVP בסכימה שלנו).
+drop function if exists admin_get_all_game_results(text, text, text);
 create or replace function admin_get_all_game_results(input_pw text, input_phone text, input_pin text)
-returns table(game_id text, team1_score integer, team2_score integer, team1_count bigint, team2_count bigint, kickoff bigint, team1_player_ids text[], team2_player_ids text[])
+returns table(game_id text, team1_score integer, team2_score integer, team1_count bigint, team2_count bigint, kickoff bigint, team1_player_ids text[], team2_player_ids text[], mvp_player_id text)
 language plpgsql security definer as $$
 declare v_role text;
 begin
@@ -462,7 +482,8 @@ begin
       (select count(*) from game_teams gt where gt.game_id = gr.game_id and gt.team = 2) as team2_count,
       g.kickoff,
       (select array_agg(gt.player_id) from game_teams gt where gt.game_id = gr.game_id and gt.team = 1) as team1_player_ids,
-      (select array_agg(gt.player_id) from game_teams gt where gt.game_id = gr.game_id and gt.team = 2) as team2_player_ids
+      (select array_agg(gt.player_id) from game_teams gt where gt.game_id = gr.game_id and gt.team = 2) as team2_player_ids,
+      gr.mvp_player_id
     from game_results gr
     join games g on g.id = gr.game_id
     union all
@@ -473,7 +494,8 @@ begin
       count(*) filter (where lpg.team = 2) as team2_count,
       floor(extract(epoch from min(lpg.game_date)) * 1000)::bigint as kickoff,
       array_agg(lpg.player_id) filter (where lpg.team = 1) as team1_player_ids,
-      array_agg(lpg.player_id) filter (where lpg.team = 2) as team2_player_ids
+      array_agg(lpg.player_id) filter (where lpg.team = 2) as team2_player_ids,
+      null::text as mvp_player_id
     from legacy_player_games lpg
     group by lpg.source_game_id
     order by kickoff desc;

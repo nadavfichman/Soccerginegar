@@ -1686,6 +1686,14 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   const [addSplitGuestGrade,setAddSplitGuestGrade]=useState("");
   const [addSplitTeam,setAddSplitTeam]=useState(1);
   const [addingSplitPlayer,setAddingSplitPlayer]=useState(false);
+  // סימון "פצוע" למשחק הזה בלבד — ר' שיחה עם המשתמש: "לא רוצה להתחיל
+  // לשנות כל פעם בשחקן עצמו". לא נשמר בשום מקום (לא על השחקן, לא על
+  // המשחק) — state מקומי שמתאפס בכל פתיחה מחדש של הפאנל (ר' openTeamSplit).
+  // ההפחתה (3 נקודות) חלה רק על חישוב האיזון/הסתברות הניצחון
+  // (adjustedForSplit למטה) — "מאחורי הקלעים", כמו שהמשתמש ביקש: לא על
+  // התגית/הדירוג המוצג של השחקן בשום מקום אחר באפליקציה.
+  const [injuredIds,setInjuredIds]=useState(new Set());
+  const toggleInjured = (id) => setInjuredIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const teamCardRef = useRef(null);
   const isOpen = now >= game.opensAt;
   const hasHappened = now >= game.kickoff;
@@ -1817,11 +1825,17 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   // (displayName) אבל מיותר כאן: בפאנל החלוקה ובכרטיס השיתוף זה פרטי
   // מידע לאדמין בלבד, לא רלוונטי מי אורח ומי לא (ר' שיחה עם המשתמש).
   const eligibleForSplit = main.map(r => ({ id: r.player_id, name: r.guest_name || nameOf(r.player_id), grade: grades[r.player_id] || 50 }));
+  // גרסה "לחישוב בלבד" — דירוג מופחת ב-3 לכל מי שסומן פצוע, בלי לשנות
+  // את eligibleForSplit/teamSplit עצמם (שם נשאר הדירוג האמיתי, מוצג
+  // כרגיל בתגית העגולה ובסיכום הקבוצה). רק הפעלה מחדש של האיזון
+  // (reshuffleTeams) וההסתברות המוצגת מתייחסות לזה.
+  const adjustedForSplit = eligibleForSplit.map(p => injuredIds.has(p.id) ? { ...p, grade: Math.max(1, p.grade - 3) } : p);
   // השיבוץ השמור (אם יש) חי בטבלה נעולה (game_teams, ר' migrations/0014)
   // ולכן נטען רק כאן, בפתיחה, דרך RPC אדמין — לא מגיע עם שאר נתוני המשחק.
   const openTeamSplit = async () => {
     setShowTeamSplit(true);
     setTeamsLoading(true);
+    setInjuredIds(new Set());
     // התוצאה (אם יש) נטענת יחד עם השיבוץ — אותה קריאת פתיחה, אותו מצב טעינה
     // (ר' migrations/0016, admin_get_game_result)
     // פורמה (5 תוצאות אחרונות לכל שחקן, ר' migrations/0017) נטענת באותה
@@ -1879,7 +1893,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
     return "⚽ כדורגל גניגרי ושות'\nתוצאת המשחק מ-"+dayName(game.kickoff)+" "+dateOnly(game.kickoff)+":\nקבוצה 1 "+gameResult.team1_score+" - "+gameResult.team2_score+" קבוצה 2\n"+winnerLine;
   };
   const shareResultMsg = () => window.open("https://wa.me/?text="+encodeURIComponent(buildResultMsg()), "_blank");
-  const reshuffleTeams = () => setTeamSplit(splitTeamsByChemistry(eligibleForSplit, chemistry));
+  const reshuffleTeams = () => setTeamSplit(splitTeamsByChemistry(adjustedForSplit, chemistry));
   const swapPlayer = (id, fromTeam) => {
     setTeamSplit(prev => {
       if (!prev) return prev;
@@ -2029,6 +2043,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
                   {formDots(p.id)}
                   <span style={S.teamPlayerName}>{p.name}</span>
                   <span style={S.teamSwapHint}>⇄</span>
+                  <span style={{...S.teamRemoveX,opacity:injuredIds.has(p.id)?1:0.35}} onClick={e=>{e.stopPropagation(); toggleInjured(p.id);}} title="סמן/בטל פצוע — מפחית 3 נקודות רק לחישוב האיזון למשחק הזה, לא על הדירוג הקבוע">🩹</span>
                   <span style={S.teamRemoveX} onClick={e=>{e.stopPropagation(); removeFromSplit(p.id);}} title="הסר מהחלוקה — לא יחשב במשחק הזה">✕</span>
                 </div>
               ))}
@@ -2037,6 +2052,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
               {teamSplit.team2.map(p=>(
                 <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,2)} title="הקש להעברה לקבוצה 1">
                   <span style={S.teamRemoveX} onClick={e=>{e.stopPropagation(); removeFromSplit(p.id);}} title="הסר מהחלוקה — לא יחשב במשחק הזה">✕</span>
+                  <span style={{...S.teamRemoveX,opacity:injuredIds.has(p.id)?1:0.35}} onClick={e=>{e.stopPropagation(); toggleInjured(p.id);}} title="סמן/בטל פצוע — מפחית 3 נקודות רק לחישוב האיזון למשחק הזה, לא על הדירוג הקבוע">🩹</span>
                   <span style={S.teamSwapHint}>⇄</span>
                   <span style={S.teamPlayerName}>{p.name}</span>
                   {formDots(p.id)}
@@ -2050,7 +2066,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
               המשתמש — "להציג סיכוי ניצחון כמו אצל דרור"). אדמין בלבד, בדיוק
               כמו הדירוגים עצמם — לא מוצג לשחקנים. */}
           {(() => {
-            const p1 = teamWinProbability(chemistry, eligibleForSplit, teamSplit.team1.map(p=>p.id), teamSplit.team2.map(p=>p.id));
+            const p1 = teamWinProbability(chemistry, adjustedForSplit, teamSplit.team1.map(p=>p.id), teamSplit.team2.map(p=>p.id));
             return <div style={{textAlign:"center",color:"#fff",fontSize:13,opacity:0.9,marginBottom:4}}>🔮 סיכוי ניצחון משוער: קבוצה 1 {p1}% · קבוצה 2 {100-p1}%</div>;
           })()}
           <div style={S.teamSplitFooterRow}>

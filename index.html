@@ -980,7 +980,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
       {isSuper ? (
         <>
           {activeTab==="games" && <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />}
-          {activeTab==="history" && <GameResultsHistory cred={cred} roster={roster} />}
+          {activeTab==="history" && <GameResultsHistory cred={cred} roster={roster} games={games} />}
           {activeTab==="players" && (
             <>
               <PendingRequests {...{ pending, roster, refresh, cred }} />
@@ -1549,11 +1549,24 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grade
 // משחק") — מציגה את שתי הקבוצות. team1_player_ids/team2_player_ids
 // כבר מגיעים מוטמעים בתוך admin_get_all_game_results עצמה (גם לחי וגם
 // למיובא) — אין round-trip נוסף בלחיצה על שורה, רק מיפוי id→שם מקומי.
-function GameResultsHistory({ cred, roster }) {
+function GameResultsHistory({ cred, roster, games }) {
   const [loading,setLoading]=useState(true);
   const [resultsHistory,setResultsHistory]=useState(null);
   const [expanded,setExpanded]=useState(null); // game_id פתוח כרגע, או null
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || (id && id.startsWith("guest_") ? "אורח" : "—");
+  // שם אורח אמיתי (לא "אורח" גנרי) — ר' שיחה עם המשתמש: "אני כן רוצה
+  // לראות את השם שלו". admin_get_all_game_results מחזירה רק player_id
+  // (guest_<uuid>), בלי guest_name — אבל games (שכבר נטען ב-App, לכל
+  // המשחקים) כבר מכיל את זה בתוך registrations[].guestName, אז אין
+  // צורך בשום RPC/מיגרציה חדשה. רק למשחקים חיים ("live:") — למיובאים
+  // מ-TeamPicker ("legacy:") אין מושג "אורח" בכלל.
+  const guestNameFor = (prefixedGameId, playerId) => {
+    if (!prefixedGameId || !prefixedGameId.startsWith("live:")) return null;
+    const realId = prefixedGameId.slice(5);
+    const g = games.find(g => g.id === realId);
+    const reg = g && g.registrations.find(r => r.playerId === playerId);
+    return (reg && reg.guestName) || null;
+  };
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -1595,10 +1608,16 @@ function GameResultsHistory({ cred, roster }) {
                 <div style={{padding:"4px 4px 10px"}}>
                   <div style={S.teamSplitCols}>
                     <div style={{...S.teamCol,background:"#3b82f6"}}>
-                      {(r.team1_player_ids||[]).map((id,i)=><div key={i} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{nameOf(id)}</span></div>)}
+                      {(r.team1_player_ids||[]).map((id,i)=>{
+                        const gName = guestNameFor(r.game_id, id);
+                        return <div key={i} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{gName ? gName+" (אורח)" : nameOf(id)}</span></div>;
+                      })}
                     </div>
                     <div style={{...S.teamCol,background:"#f97316"}}>
-                      {(r.team2_player_ids||[]).map((id,i)=><div key={i} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{nameOf(id)}</span></div>)}
+                      {(r.team2_player_ids||[]).map((id,i)=>{
+                        const gName = guestNameFor(r.game_id, id);
+                        return <div key={i} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{gName ? gName+" (אורח)" : nameOf(id)}</span></div>;
+                      })}
                     </div>
                   </div>
                 </div>

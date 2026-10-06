@@ -138,7 +138,10 @@
   }
   // יחס שווה בין שלושת הגורמים (לפי בקשת המשתמש — לא ברירת המחדל 20/40/40 של דרור)
   const CHEM_WEIGHTS = { grade: 1 / 3, chemistry: 1 / 3, winRate: 1 / 3 };
-  function balanceScore(chem, players, ids1, ids2) {
+  // מחושב פעם אחת, משמש גם לבחירת החלוקה הטובה ביותר (balanceScore, המרחק
+  // מ-50%) וגם לתצוגה לאדמין של "סיכוי הניצחון המשוער" של קבוצה 1 (ר' שיחה
+  // עם המשתמש — "להציג סיכוי ניצחון כמו אצל דרור", TeamPrediction.java).
+  function computeProbability(chem, players, ids1, ids2) {
     const g1 = sumGrade(players.filter(p => ids1.includes(p.id)));
     const g2 = sumGrade(players.filter(p => ids2.includes(p.id)));
     // בלי נתונים (0 משחקים רלוונטיים) → ניטרלי 50%, לא 0 — כדי לא להטות
@@ -147,8 +150,14 @@
     const totalGrade = g1 + g2;
     const gradeAdv = totalGrade > 0 ? (g1 * 100 / totalGrade - 50) : 0;
     const weighted = (c1 - c2) * CHEM_WEIGHTS.chemistry + (w1 - w2) * CHEM_WEIGHTS.winRate + gradeAdv * CHEM_WEIGHTS.grade;
-    const prob = Math.max(20, Math.min(80, Math.round(50 + weighted)));
-    return Math.abs(prob - 50);
+    return Math.max(20, Math.min(80, Math.round(50 + weighted)));
+  }
+  function balanceScore(chem, players, ids1, ids2) {
+    return Math.abs(computeProbability(chem, players, ids1, ids2) - 50);
+  }
+  // סיכוי הניצחון המשוער של קבוצה 1 (אחוזים, 20-80) — קבוצה 2 היא 100-זה.
+  function teamWinProbability(chem, players, ids1, ids2) {
+    return computeProbability(chem, players, ids1, ids2);
   }
   function splitTeamsByChemistry(players, chemistry, attempts) {
     if (!players || players.length === 0) return { team1: [], team2: [] };
@@ -168,6 +177,6 @@
   return {
     fmt, fmtDateTime, fmtTime, dateOnly, dayName, countdown,
     normPhone, validName, normName, validPhone, normEmail, validEmail, sameEmail,
-    findDuplicate, tierRank, sortRegs, buildChemistryMap, splitTeamsByChemistry,
+    findDuplicate, tierRank, sortRegs, buildChemistryMap, splitTeamsByChemistry, teamWinProbability,
   };
 }));

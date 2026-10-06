@@ -68,7 +68,7 @@ const MAX_PLAYERS = 22;
 const {
   fmt, fmtDateTime, fmtTime, dateOnly, dayName, countdown,
   normPhone, validName, normName, validPhone, normEmail, validEmail, sameEmail,
-  findDuplicate, tierRank, sortRegs, buildChemistryMap, splitTeamsByChemistry,
+  findDuplicate, tierRank, sortRegs, buildChemistryMap, splitTeamsByChemistry, teamWinProbability,
 } = AppLogic;
 
 // שולח רשומת שגיאה ל-Supabase (best effort — לא זורק, לא חוסם את המשתמש) כדי
@@ -1869,6 +1869,16 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
     setSavingResult(false);
     if (ok) setGameResult({ team1_score: s1, team2_score: s2 });
   };
+  // שיתוף התוצאה הסופית לוואטסאפ — אותו דפוס בדיוק כמו buildOpenMsg/shareOpenMsg
+  // (wa.me בלי מספר, טקסט בלבד, בלי RPC/תמונה) — ר' שיחה עם המשתמש, בהשוואה
+  // לאפליקציה של דרור ("לשתף גם את התוצאה הסופית, לא רק את החלוקה מראש").
+  const buildResultMsg = () => {
+    if (!gameResult) return "";
+    const winnerLine = gameResult.team1_score > gameResult.team2_score ? "🏆 קבוצה 1 ניצחה!"
+      : gameResult.team2_score > gameResult.team1_score ? "🏆 קבוצה 2 ניצחה!" : "🤝 תיקו";
+    return "⚽ כדורגל גניגרי ושות'\nתוצאת המשחק מ-"+dayName(game.kickoff)+" "+dateOnly(game.kickoff)+":\nקבוצה 1 "+gameResult.team1_score+" - "+gameResult.team2_score+" קבוצה 2\n"+winnerLine;
+  };
+  const shareResultMsg = () => window.open("https://wa.me/?text="+encodeURIComponent(buildResultMsg()), "_blank");
   const reshuffleTeams = () => setTeamSplit(splitTeamsByChemistry(eligibleForSplit, chemistry));
   const swapPlayer = (id, fromTeam) => {
     setTeamSplit(prev => {
@@ -2035,6 +2045,14 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
               ))}
             </div>
           </div>
+          {/* סיכוי ניצחון משוער — אותו חישוב בדיוק שכבר קובע את החלוקה
+              (balanceScore ב-logic.js), רק מוצג לאדמין כאחוזים (ר' שיחה עם
+              המשתמש — "להציג סיכוי ניצחון כמו אצל דרור"). אדמין בלבד, בדיוק
+              כמו הדירוגים עצמם — לא מוצג לשחקנים. */}
+          {(() => {
+            const p1 = teamWinProbability(chemistry, eligibleForSplit, teamSplit.team1.map(p=>p.id), teamSplit.team2.map(p=>p.id));
+            return <div style={{textAlign:"center",color:"#fff",fontSize:13,opacity:0.9,marginBottom:4}}>🔮 סיכוי ניצחון משוער: קבוצה 1 {p1}% · קבוצה 2 {100-p1}%</div>;
+          })()}
           <div style={S.teamSplitFooterRow}>
             <div style={{...S.teamSplitFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teamSplit.team1.length} שחקנים · דירוג {teamSplit.team1.reduce((s,p)=>s+p.grade,0)}</div>
             <div style={{...S.teamSplitFooter,background:"#ffedd5",color:"#7c2d12"}}>{teamSplit.team2.length} שחקנים · דירוג {teamSplit.team2.reduce((s,p)=>s+p.grade,0)}</div>
@@ -2071,6 +2089,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
                   <span style={{opacity:gameResult.team1_score>gameResult.team2_score?1:0.6}}>קבוצה 1: {gameResult.team1_score}</span>
                   {"  —  "}
                   <span style={{opacity:gameResult.team2_score>gameResult.team1_score?1:0.6}}>קבוצה 2: {gameResult.team2_score}</span>
+                  <button className="btn waBtn small" style={{display:"block",width:"100%",marginTop:8}} onClick={shareResultMsg}>📤 שתף תוצאה לוואטסאפ</button>
                 </div>
               )}
               <div style={{display:"flex",gap:6,alignItems:"center"}}>

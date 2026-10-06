@@ -6,7 +6,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
   normPhone, validName, normName, validPhone, normEmail, validEmail, sameEmail,
-  findDuplicate, tierRank, sortRegs, buildChemistryMap, splitTeamsByChemistry,
+  findDuplicate, tierRank, sortRegs, buildChemistryMap, splitTeamsByChemistry, teamWinProbability,
 } = require("../logic.js");
 
 // ---- טלפון/שם/מייל ----
@@ -208,4 +208,19 @@ test("splitTeamsByChemistry: כימיה חזקה בין שני שחקנים נו
     if (!bothIn1 && !bothIn2) apart++;
   }
   assert.ok(apart > trials * 0.9, "apart="+apart+"/"+trials+" (ציפייה: כמעט תמיד מפוזרים)");
+});
+
+// ---- teamWinProbability ----
+
+test("teamWinProbability: בלי נתוני כימיה/היסטוריה ודירוג שווה — 50%-50%", () => {
+  const players = [{ id: "a", grade: 50 }, { id: "b", grade: 50 }];
+  const p1 = teamWinProbability({}, players, ["a"], ["b"]);
+  assert.equal(p1, 50);
+});
+
+test("teamWinProbability: קבוצה 1 חזקה יותר בדירוג — מעל 50%, וקבוצה 2 משלימה ל-100", () => {
+  const players = [{ id: "a", grade: 90 }, { id: "b", grade: 10 }];
+  const p1 = teamWinProbability({}, players, ["a"], ["b"]);
+  assert.ok(p1 > 50, "p1="+p1+" (ציפייה: מעל 50)");
+  assert.equal(p1 + (100 - p1), 100);
 });

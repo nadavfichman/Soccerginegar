@@ -2040,24 +2040,34 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
             <div style={{...S.teamCol,background:"#3b82f6"}}>
               {teamSplit.team1.map(p=>(
                 <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,1)} title="הקש להעברה לקבוצה 2">
-                  <span style={S.teamGradeBadge}>{p.grade}</span>
-                  {formDots(p.id)}
-                  <span style={S.teamPlayerName}>{p.name}</span>
-                  <span style={S.teamSwapHint}>⇄</span>
-                  <span style={{...S.teamRemoveX,opacity:injuredIds.has(p.id)?1:0.35}} onClick={e=>{e.stopPropagation(); toggleInjured(p.id);}} title="סמן/בטל פצוע — מפחית 3 נקודות רק לחישוב האיזון למשחק הזה, לא על הדירוג הקבוע">🩹</span>
-                  <span style={S.teamRemoveX} onClick={e=>{e.stopPropagation(); removeFromSplit(p.id);}} title="הסר מהחלוקה — לא יחשב במשחק הזה">✕</span>
+                  <div style={S.teamPlayerLine1}>
+                    <span style={S.teamGradeBadge}>{p.grade}</span>
+                    <span style={S.teamPlayerName}>{p.name}</span>
+                  </div>
+                  <div style={S.teamPlayerLine2}>
+                    {formDots(p.id)}
+                    <span style={S.teamIconCluster}>
+                      <span style={{...S.teamRemoveX,opacity:injuredIds.has(p.id)?1:0.35}} onClick={e=>{e.stopPropagation(); toggleInjured(p.id);}} title="סמן/בטל פצוע — מפחית 3 נקודות רק לחישוב האיזון למשחק הזה, לא על הדירוג הקבוע">🩹</span>
+                      <span style={S.teamRemoveX} onClick={e=>{e.stopPropagation(); removeFromSplit(p.id);}} title="הסר מהחלוקה — לא יחשב במשחק הזה">✕</span>
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
             <div style={{...S.teamCol,background:"#f97316"}}>
               {teamSplit.team2.map(p=>(
                 <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,2)} title="הקש להעברה לקבוצה 1">
-                  <span style={S.teamRemoveX} onClick={e=>{e.stopPropagation(); removeFromSplit(p.id);}} title="הסר מהחלוקה — לא יחשב במשחק הזה">✕</span>
-                  <span style={{...S.teamRemoveX,opacity:injuredIds.has(p.id)?1:0.35}} onClick={e=>{e.stopPropagation(); toggleInjured(p.id);}} title="סמן/בטל פצוע — מפחית 3 נקודות רק לחישוב האיזון למשחק הזה, לא על הדירוג הקבוע">🩹</span>
-                  <span style={S.teamSwapHint}>⇄</span>
-                  <span style={S.teamPlayerName}>{p.name}</span>
-                  {formDots(p.id)}
-                  <span style={S.teamGradeBadge}>{p.grade}</span>
+                  <div style={S.teamPlayerLine1}>
+                    <span style={S.teamPlayerName}>{p.name}</span>
+                    <span style={S.teamGradeBadge}>{p.grade}</span>
+                  </div>
+                  <div style={S.teamPlayerLine2}>
+                    <span style={S.teamIconCluster}>
+                      <span style={S.teamRemoveX} onClick={e=>{e.stopPropagation(); removeFromSplit(p.id);}} title="הסר מהחלוקה — לא יחשב במשחק הזה">✕</span>
+                      <span style={{...S.teamRemoveX,opacity:injuredIds.has(p.id)?1:0.35}} onClick={e=>{e.stopPropagation(); toggleInjured(p.id);}} title="סמן/בטל פצוע — מפחית 3 נקודות רק לחישוב האיזון למשחק הזה, לא על הדירוג הקבוע">🩹</span>
+                    </span>
+                    {formDots(p.id)}
+                  </div>
                 </div>
               ))}
             </div>
@@ -2703,10 +2713,18 @@ const S = {
   teamSplitCols: { display:"flex" },
   teamCol: { flex:1, padding:"14px 12px", minWidth:0 },
   teamColTitle: { fontWeight:800, fontSize:12, color:"#166534", marginBottom:6 },
-  teamPlayerRow: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, fontSize:14, padding:"9px 2px", color:"#fff", cursor:"pointer" },
-  teamPlayerName: { flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight:700 },
+  // שורה צפופה מדי במובייל (ר' שיחה עם המשתמש — צילום מסך, "קטן מדי, לא
+  // רואים כלום") — 5-6 אלמנטים קבועי-רוחב ב-gap:10 אחד אכלו כמעט את כל
+  // רוחב העמודה (~170px על נייד רגיל) לפני שהשם קיבל פיקסל אחד. פתרון:
+  // שתי שורות לכל שחקן (תג+שם למעלה, נקודות+אייקונים למטה) — השם מתחרה
+  // רק עם תג הדירוג, לא עם חמישה אלמנטים. "⇄" (רמז-החלפה) הוסר לגמרי —
+  // דקורטיבי גרידא, השורה כבר onClick-ית במלואה.
+  teamPlayerRow: { display:"flex", flexDirection:"column", gap:4, padding:"8px 2px", color:"#fff", cursor:"pointer" },
+  teamPlayerLine1: { display:"flex", alignItems:"center", gap:8 },
+  teamPlayerLine2: { display:"flex", alignItems:"center", justifyContent:"space-between", gap:6, opacity:0.85 },
+  teamPlayerName: { flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight:700, fontSize:15 },
   teamGradeBadge: { display:"inline-flex", alignItems:"center", justifyContent:"center", width:30, height:30, borderRadius:"50%", background:"#5b6b7a", fontSize:13, fontWeight:800, color:"#fff", flexShrink:0 },
-  teamSwapHint: { opacity:0.55, fontSize:13, flexShrink:0 },
+  teamIconCluster: { display:"flex", alignItems:"center", gap:6, flexShrink:0 },
   teamRemoveX: { opacity:0.7, fontSize:13, flexShrink:0, padding:"2px 4px", cursor:"pointer" },
   teamSplitFooterRow: { display:"flex" },
   teamSplitFooter: { flex:1, textAlign:"center", fontWeight:800, fontSize:12, padding:"10px 4px" },

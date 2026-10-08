@@ -1993,12 +1993,16 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   // הנקודות בפועל — אחרת שחקן עם 5 תוצאות "דוחק" את השם שלו לרוחב צר יותר
   // משחקן עם 0-1 תוצאות, והעמודה נראית לא פרופורציונלית בין שורה לשורה
   // (ר' שיחה עם המשתמש — "המסך של הכוחות לא פרופורציוני לאחר שיש 5 עיגולים").
+  // הנקודה הראשונה במערך (outcomes[0]) היא תמיד המשחק האחרון — אבל בדף
+  // RTL היא מוצגת בצד ימין של האשכול, לא שמאל, מה שבלבל בפועל (ר' שיחה
+  // עם המשתמש — חשב שזה באג בנתונים, התברר שרק כיוון הקריאה). טבעת לבנה
+  // סביב הנקודה הראשונה מסמנת "המשחק האחרון" בלי תלות בכיוון/צד בכלל.
   const formDots = (pid) => {
     const outcomes = playerForm[pid] || [];
     const color = o => o==="win" ? "#22c55e" : o==="loss" ? "#ef4444" : "#3b82f6";
     return (
       <span style={{display:"inline-flex",gap:3,flexShrink:0,width:47}}>
-        {outcomes.map((o,i) => <span key={i} style={{width:7,height:7,borderRadius:"50%",background:color(o),flexShrink:0}} />)}
+        {outcomes.map((o,i) => <span key={i} style={{width:7,height:7,borderRadius:"50%",background:color(o),flexShrink:0,boxShadow:i===0?"0 0 0 1.5px #fff":"none"}} title={i===0?"המשחק האחרון":undefined} />)}
       </span>
     );
   };

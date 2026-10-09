@@ -790,7 +790,10 @@ function TeamsDisplay({ gameId, roster, regs }) {
   const [teams,setTeams] = useState(null); // {team1:[{id,name}], team2:[...]} | null
   const [playerForm,setPlayerForm] = useState({}); // player_id -> ["win"|"loss"|"draw", ...] — ר' migrations/0027
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
-  const displayNm = id => { const g = (regs.find(r=>r.playerId===id)||{}).guestName; return g ? (g+" (אורח)") : nameOf(id); };
+  // בלי "(אורח)" — ר' שיחה עם המשתמש: "לא להציג אורח, להציג רק את שם
+  // השחקן... ממש כמו בתמונה של הוואטסאפ" (תמונת השיתוף, teamSplit אצל
+  // האדמין, כבר מציגה שם בלבד — guest_name || nameOf, בלי שום תיוג).
+  const displayNm = id => { const g = (regs.find(r=>r.playerId===id)||{}).guestName; return g || nameOf(id); };
   const toggle = async () => {
     if (show) { setShow(false); return; }
     setShow(true);
@@ -827,10 +830,10 @@ function TeamsDisplay({ gameId, roster, regs }) {
         <div style={S.teamSplitPanel}>
           <div style={S.teamSplitCols}>
             <div style={{...S.teamCol,background:"#3b82f6"}}>
-              {teams.team1.map(p=><div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{p.name}</span>{renderFormDots(playerForm[p.id])}</div>)}
+              {teams.team1.map((p,i)=><div key={p.id} style={{...S.teamCardPlayer,color:"#fff"}}><span style={S.teamCardBadge}>{i+1}</span><span style={S.teamCardName}>{p.name}</span>{renderFormDots(playerForm[p.id])}</div>)}
             </div>
             <div style={{...S.teamCol,background:"#f97316"}}>
-              {teams.team2.map(p=><div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{p.name}</span>{renderFormDots(playerForm[p.id])}</div>)}
+              {teams.team2.map((p,i)=><div key={p.id} style={{...S.teamCardPlayer,color:"#fff"}}><span style={S.teamCardBadge}>{i+1}</span><span style={S.teamCardName}>{p.name}</span>{renderFormDots(playerForm[p.id])}</div>)}
             </div>
           </div>
           <div style={S.teamSplitFooterRow}>

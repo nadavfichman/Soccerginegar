@@ -830,10 +830,26 @@ function TeamsDisplay({ gameId, roster, regs }) {
         <div style={S.teamSplitPanel}>
           <div style={S.teamSplitCols}>
             <div style={{...S.teamCol,background:"#3b82f6"}}>
-              {teams.team1.map((p,i)=><div key={p.id} style={{...S.teamCardPlayer,color:"#fff"}}><span style={S.teamCardBadge}>{i+1}</span><span style={S.teamCardName}>{p.name}</span>{renderFormDots(playerForm[p.id])}</div>)}
+              {teams.team1.map((p,i)=>
+                <div key={p.id} style={{...S.teamsDisplayRow,color:"#fff"}}>
+                  <div style={S.teamsDisplayTop}>
+                    <span style={S.teamCardBadge}>{i+1}</span>
+                    <span style={S.teamsDisplayName}>{p.name}</span>
+                  </div>
+                  {renderFormDots(playerForm[p.id])}
+                </div>
+              )}
             </div>
             <div style={{...S.teamCol,background:"#f97316"}}>
-              {teams.team2.map((p,i)=><div key={p.id} style={{...S.teamCardPlayer,color:"#fff"}}><span style={S.teamCardBadge}>{i+1}</span><span style={S.teamCardName}>{p.name}</span>{renderFormDots(playerForm[p.id])}</div>)}
+              {teams.team2.map((p,i)=>
+                <div key={p.id} style={{...S.teamsDisplayRow,color:"#fff"}}>
+                  <div style={S.teamsDisplayTop}>
+                    <span style={S.teamCardBadge}>{i+1}</span>
+                    <span style={S.teamsDisplayName}>{p.name}</span>
+                  </div>
+                  {renderFormDots(playerForm[p.id])}
+                </div>
+              )}
             </div>
           </div>
           <div style={S.teamSplitFooterRow}>
@@ -2792,6 +2808,9 @@ const S = {
   teamCardPlayer: { display:"flex", alignItems:"center", gap:8, padding:"8px 0" },
   teamCardName: { flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" },
   teamCardBadge: { display:"inline-flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:"50%", background:"#5b6b7a", fontSize:12, fontWeight:800, flexShrink:0 },
+  teamsDisplayRow: { display:"flex", flexDirection:"column", gap:4, padding:"8px 0" },
+  teamsDisplayTop: { display:"flex", alignItems:"center", gap:8 },
+  teamsDisplayName: { flex:1, minWidth:0, fontWeight:700, fontSize:15, wordBreak:"break-word", overflowWrap:"anywhere" },
   teamCardFooterRow: { display:"flex" },
   teamCardFooter: { flex:1, textAlign:"center", fontWeight:800, fontSize:13, padding:"10px 0" },
   pubText: { fontSize:13, fontWeight:600, color:"#3f3f2e" },

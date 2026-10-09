@@ -788,6 +788,7 @@ function TeamsDisplay({ gameId, roster, regs }) {
   const [show,setShow] = useState(false);
   const [loading,setLoading] = useState(false);
   const [teams,setTeams] = useState(null); // {team1:[{id,name}], team2:[...]} | null
+  const [playerForm,setPlayerForm] = useState({}); // player_id -> ["win"|"loss"|"draw", ...] — ר' migrations/0027
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
   const displayNm = id => { const g = (regs.find(r=>r.playerId===id)||{}).guestName; return g ? (g+" (אורח)") : nameOf(id); };
   const toggle = async () => {
@@ -795,13 +796,27 @@ function TeamsDisplay({ gameId, roster, regs }) {
     setShow(true);
     if (teams) return;
     setLoading(true);
-    const { data, error } = await db.rpc("get_published_teams", { input_game_id: gameId });
+    // שתי קריאות ציבוריות במקביל — הכוחות עצמם (get_published_teams,
+    // קיים) ונקודות "פורמה" (get_published_teams_form, migrations/0027,
+    // ר' שיחה עם המשתמש — "כאשר... מציג באפליקציה... שיראו את כל החמש
+    // משחקים האחרונים... אסור להראות ציונים"). db.rpc לא זורק על שגיאה
+    // (מחזיר {data:null,error}) — אז גם לפני שהמיגרציה רצה, הצגת הכוחות
+    // עצמה ממשיכה לעבוד כרגיל, רק בלי נקודות.
+    const [teamsRes, formRes] = await Promise.all([
+      db.rpc("get_published_teams", { input_game_id: gameId }),
+      db.rpc("get_published_teams_form", { input_game_id: gameId }),
+    ]);
     setLoading(false);
-    if (!error && data) {
+    if (!teamsRes.error && teamsRes.data) {
       setTeams({
-        team1: data.filter(r=>r.team===1).map(r=>({ id:r.player_id, name:displayNm(r.player_id) })),
-        team2: data.filter(r=>r.team===2).map(r=>({ id:r.player_id, name:displayNm(r.player_id) })),
+        team1: teamsRes.data.filter(r=>r.team===1).map(r=>({ id:r.player_id, name:displayNm(r.player_id) })),
+        team2: teamsRes.data.filter(r=>r.team===2).map(r=>({ id:r.player_id, name:displayNm(r.player_id) })),
       });
+    }
+    if (!formRes.error && formRes.data) {
+      const formMap = {};
+      formRes.data.forEach(row => { (formMap[row.player_id] = formMap[row.player_id] || []).push(row.outcome); });
+      setPlayerForm(formMap);
     }
   };
   return (
@@ -812,10 +827,10 @@ function TeamsDisplay({ gameId, roster, regs }) {
         <div style={S.teamSplitPanel}>
           <div style={S.teamSplitCols}>
             <div style={{...S.teamCol,background:"#3b82f6"}}>
-              {teams.team1.map(p=><div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{p.name}</span></div>)}
+              {teams.team1.map(p=><div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{p.name}</span>{renderFormDots(playerForm[p.id])}</div>)}
             </div>
             <div style={{...S.teamCol,background:"#f97316"}}>
-              {teams.team2.map(p=><div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{p.name}</span></div>)}
+              {teams.team2.map(p=><div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}><span style={S.teamPlayerName}>{p.name}</span>{renderFormDots(playerForm[p.id])}</div>)}
             </div>
           </div>
           <div style={S.teamSplitFooterRow}>
@@ -1654,6 +1669,25 @@ function NewGameForm({ onAdd }) {
   );
 }
 
+// נקודות "פורמה" — 5 תוצאות אחרונות (חדש→ישן), ניצחון=ירוק/הפסד=אדום/
+// תיקו=כחול. פונקציה גלובלית (לא בתוך קומפוננטה ספציפית) — משמשת גם
+// את האדמין (AdminGameRow, פאנל החלוקה + כרטיס השיתוף לוואטסאפ) וגם
+// את השחקן (TeamsDisplay, "הצגת הכוחות") — ר' שיחה עם המשתמש: "כאשר
+// אני מצרף תמונה בוואטסאפ... או מציג באפליקציה אני רוצה שגם יראו את
+// כל החמש משחקים האחרונים... אסור להראות ציונים" (אין דירוג כאן בכלל,
+// רק win/loss/draw). רוחב קבוע (47px) בלי קשר לכמות הנקודות בפועל —
+// אחרת שורות לא מיושרות בין שחקן עם 5 תוצאות לשחקן עם 0-1 (ר' שיחה עם
+// המשתמש). טבעת לבנה על הנקודה הראשונה מסמנת "המשחק האחרון" בלי תלות
+// בכיוון RTL (ר' שיחה עם המשתמש — חשב שזה באג, התברר שרק כיוון קריאה).
+function renderFormDots(outcomes) {
+  const color = o => o==="win" ? "#22c55e" : o==="loss" ? "#ef4444" : "#3b82f6";
+  return (
+    <span style={{display:"inline-flex",gap:3,flexShrink:0,width:47}}>
+      {(outcomes||[]).map((o,i) => <span key={i} style={{width:7,height:7,borderRadius:"50%",background:color(o),flexShrink:0,boxShadow:i===0?"0 0 0 1.5px #fff":"none"}} title={i===0?"המשחק האחרון":undefined} />)}
+    </span>
+  );
+}
+
 function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }) {
   const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts,attended:r.attended,guest_name:r.guestName})), roster, attendanceCounts);
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
@@ -1987,25 +2021,10 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
     setSharingTeams(false);
   };
 
-  // נקודות "פורמה" — 5 תוצאות אחרונות (חדש→ישן), ניצחון=ירוק/הפסד=אדום/
-  // תיקו=כחול (ר' migrations/0017, שיחה עם המשתמש). ריק אם אין עדיין היסטוריה.
-  // רוחב קבוע (47px = 5 נקודות × 7px + 4 רווחים × 3px) בלי קשר לכמות
-  // הנקודות בפועל — אחרת שחקן עם 5 תוצאות "דוחק" את השם שלו לרוחב צר יותר
-  // משחקן עם 0-1 תוצאות, והעמודה נראית לא פרופורציונלית בין שורה לשורה
-  // (ר' שיחה עם המשתמש — "המסך של הכוחות לא פרופורציוני לאחר שיש 5 עיגולים").
-  // הנקודה הראשונה במערך (outcomes[0]) היא תמיד המשחק האחרון — אבל בדף
-  // RTL היא מוצגת בצד ימין של האשכול, לא שמאל, מה שבלבל בפועל (ר' שיחה
-  // עם המשתמש — חשב שזה באג בנתונים, התברר שרק כיוון הקריאה). טבעת לבנה
-  // סביב הנקודה הראשונה מסמנת "המשחק האחרון" בלי תלות בכיוון/צד בכלל.
-  const formDots = (pid) => {
-    const outcomes = playerForm[pid] || [];
-    const color = o => o==="win" ? "#22c55e" : o==="loss" ? "#ef4444" : "#3b82f6";
-    return (
-      <span style={{display:"inline-flex",gap:3,flexShrink:0,width:47}}>
-        {outcomes.map((o,i) => <span key={i} style={{width:7,height:7,borderRadius:"50%",background:color(o),flexShrink:0,boxShadow:i===0?"0 0 0 1.5px #fff":"none"}} title={i===0?"המשחק האחרון":undefined} />)}
-      </span>
-    );
-  };
+  // נקודות "פורמה" — עטיפה דקה מעל renderFormDots הגלובלית (ר' הפונקציה
+  // המשותפת מעל, לפני AdminGameRow) — שולפת רק מתוך playerForm שכבר
+  // טעון כאן.
+  const formDots = (pid) => renderFormDots(playerForm[pid]);
 
   return (
     <div style={S.adminGame}>
@@ -2174,14 +2193,14 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
               <div style={{...S.teamCardCol,background:"#3b82f6"}}>
                 {teamSplit.team1.map((p,i)=>(
                   <div key={p.id} style={S.teamCardPlayer}>
-                    <span style={S.teamCardBadge}>{i+1}</span><span>{p.name}</span>
+                    <span style={S.teamCardBadge}>{i+1}</span><span>{p.name}</span>{formDots(p.id)}
                   </div>
                 ))}
               </div>
               <div style={{...S.teamCardCol,background:"#f97316"}}>
                 {teamSplit.team2.map((p,i)=>(
                   <div key={p.id} style={S.teamCardPlayer}>
-                    <span style={S.teamCardBadge}>{i+1}</span><span>{p.name}</span>
+                    <span style={S.teamCardBadge}>{i+1}</span><span>{p.name}</span>{formDots(p.id)}
                   </div>
                 ))}
               </div>

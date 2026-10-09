@@ -1733,6 +1733,22 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   const isOpen = now >= game.opensAt;
   const hasHappened = now >= game.kickoff;
   const credArgs = { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null };
+  // אינדיקציה "יש חלוקה שמורה" על כפתור הפתיחה, בלי לפתוח את הפאנל —
+  // ר' שיחה עם המשתמש: "אחרי שמשתף בוואטסאפ וחוזר לאפליקציה, הכוחות
+  // נעלמים" (בפועל לא נעלמים — game_teams כבר שמורה, רק showTeamSplit
+  // המקומי מתאפס כשדפדפני מובייל טוענים מחדש את העמוד בחזרה מתפריט
+  // השיתוף) — נבדק קליל (RPC אחד, לא כל ה-Promise.all הכבד של
+  // openTeamSplit) בכל פתיחת שורת המשחק, כדי שהכפתור עצמו כבר יגיד
+  // "יש נתון שמור" בלי לחכות שהאדמין ילחץ.
+  const [hasSavedSplit,setHasSavedSplit] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const rows = await callAdmin("admin_get_game_teams", { input_game_id: game.id, ...credArgs });
+      if (alive) setHasSavedSplit((rows||[]).length > 0);
+    })();
+    return () => { alive = false; };
+  }, [game.id]);
 
   const setGameField = async (patch) => {
     if ("published" in patch) await callAdmin("admin_set_game_published", { input_game_id: game.id, input_published: patch.published, ...credArgs });
@@ -1980,6 +1996,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   const saveTeamSplit = async () => {
     if (!teamSplit) return;
     await callAdmin("admin_set_game_teams", { input_game_id: game.id, input_team1_ids: teamSplit.team1.map(p=>p.id), input_team2_ids: teamSplit.team2.map(p=>p.id), ...credArgs });
+    setHasSavedSplit(true);
     await refresh();
   };
 
@@ -2054,7 +2071,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
         <button className={game.registrationClosed?"btn small":"btn danger small"} onClick={()=>setGameField({registration_closed:!game.registrationClosed})}>{game.registrationClosed?"🔓 פתח הרשמה מחדש":"🔒 סגור הרשמה"}</button>
       </div>
       <button className="btn primary" style={{width:"100%",marginTop:8,padding:12,fontSize:15}} onClick={()=> showTeamSplit ? setShowTeamSplit(false) : openTeamSplit()} disabled={main.length<2}>
-        ⚽ הכן כוחות למשחק {showTeamSplit?"▲":"▼"}
+        {hasSavedSplit ? "✓ חלוקה שמורה — הצג" : "⚽ הכן כוחות למשחק"} {showTeamSplit?"▲":"▼"}
       </button>
       {showTeamSplit && teamsLoading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
       {showTeamSplit && !teamsLoading && teamSplit && (
@@ -2193,14 +2210,14 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
               <div style={{...S.teamCardCol,background:"#3b82f6"}}>
                 {teamSplit.team1.map((p,i)=>(
                   <div key={p.id} style={S.teamCardPlayer}>
-                    <span style={S.teamCardBadge}>{i+1}</span><span>{p.name}</span>{formDots(p.id)}
+                    <span style={S.teamCardBadge}>{i+1}</span><span style={S.teamCardName}>{p.name}</span>{formDots(p.id)}
                   </div>
                 ))}
               </div>
               <div style={{...S.teamCardCol,background:"#f97316"}}>
                 {teamSplit.team2.map((p,i)=>(
                   <div key={p.id} style={S.teamCardPlayer}>
-                    <span style={S.teamCardBadge}>{i+1}</span><span>{p.name}</span>{formDots(p.id)}
+                    <span style={S.teamCardBadge}>{i+1}</span><span style={S.teamCardName}>{p.name}</span>{formDots(p.id)}
                   </div>
                 ))}
               </div>
@@ -2762,7 +2779,8 @@ const S = {
   teamCardHeader: { textAlign:"center", fontWeight:800, fontSize:17, color:"#166534", padding:"20px 10px", background:"#f2f6f0", lineHeight:1.7 },
   teamCardCols: { display:"flex" },
   teamCardCol: { flex:1, padding:"18px 16px", color:"#fff", fontWeight:700, fontSize:16 },
-  teamCardPlayer: { display:"flex", alignItems:"center", gap:10, padding:"8px 0" },
+  teamCardPlayer: { display:"flex", alignItems:"center", gap:8, padding:"8px 0" },
+  teamCardName: { flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" },
   teamCardBadge: { display:"inline-flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:"50%", background:"#5b6b7a", fontSize:12, fontWeight:800, flexShrink:0 },
   teamCardFooterRow: { display:"flex" },
   teamCardFooter: { flex:1, textAlign:"center", fontWeight:800, fontSize:13, padding:"10px 0" },

@@ -451,12 +451,18 @@ grant execute on function get_published_teams_form(text) to anon, authenticated;
 -- שמורה + חלוקה שמורה (game_teams) מספיקות, בלי תלות בפעולת UI נפרדת.
 -- ציבורי כמו get_published_teams, מאותה סיבה בדיוק — מחושב גם למסך
 -- שחקן רגיל, לא רק לאדמין. לא חושף שום דבר חוץ מ-player_id/game_id גולמיים.
+-- migrations/0028 הוסיפה UNION עם legacy_player_games (game_id מקודד
+-- 'legacy:'||source_game_id) — כדי שתג "הגעות" יתיישר עם "משחקים" במסך
+-- מידע שחקן (admin_get_player_stats), שכבר כולל היסטוריה מיובאת.
 create or replace function get_counted_results_players()
 returns table(game_id text, player_id text)
 language sql security definer as $$
   select gt.game_id, gt.player_id
   from game_results gr
-  join game_teams gt on gt.game_id = gr.game_id;
+  join game_teams gt on gt.game_id = gr.game_id
+  union
+  select 'legacy:'||lpg.source_game_id, lpg.player_id
+  from legacy_player_games lpg;
 $$;
 
 grant execute on function get_counted_results_players() to anon, authenticated;
@@ -665,6 +671,21 @@ begin
       select lpg.outcome
       from legacy_player_games lpg
       where lpg.player_id = input_player_id
+      -- migrations/0028: משחקים עם נוכחות נעולה שלא עברו דרך חלוקת-כוחות/
+      -- תוצאה בכלל — נספרים ב-games_count בלי תוצאה ידועה (outcome=null),
+      -- כדי להתיישר עם attendanceCounts (תג "הגעות") שכבר סופר אותם.
+      union all
+      select null::text as outcome
+      from registrations r
+      join games g on g.id = r.game_id
+      where r.player_id = input_player_id
+        and r.attended = true
+        and g.attendance_locked = true
+        and not exists (
+          select 1 from game_teams gt2
+          join game_results gr2 on gr2.game_id = gt2.game_id
+          where gt2.game_id = r.game_id and gt2.player_id = r.player_id
+        )
     )
   select count(*)::integer as games_count,
     coalesce(sum((outcome = 'win')::integer), 0)::integer as wins,

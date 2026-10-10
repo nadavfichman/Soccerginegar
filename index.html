@@ -2358,7 +2358,16 @@ function StatsTable({ roster, cred, grades }) {
     if (col === "winrate") return winRateOf(p);
     if (col === "wins") return Number((stats[p.id]||{}).wins) || 0;
     if (col === "losses") return Number((stats[p.id]||{}).losses) || 0;
+    if (col === "unknown") return unknownOf(p);
     if (col === "status") return rankOf(p);
+  };
+  // "ללא תוצאה" — ר' שיחה עם המשתמש ("חייבת להיות בדיקה שנצחונות+הפסדים+
+  // תיקו שווה לסך המשחקים"): games_count כולל גם משחקים עם נוכחות נעולה
+  // שלא הוזנה להם תוצאה (ר' migrations/0028) — games_count=wins+losses+
+  // draws+unknown תמיד, בזכות חשיפת הקטגוריה כמספר משלה.
+  const unknownOf = p => {
+    const s = stats[p.id] || { games_count:0, wins:0, losses:0, draws:0 };
+    return (Number(s.games_count)||0) - (Number(s.wins)||0) - (Number(s.losses)||0) - (Number(s.draws)||0);
   };
 
   const q = normName(search);
@@ -2412,6 +2421,7 @@ function StatsTable({ roster, cred, grades }) {
                 <Th col="winrate">אחוז נצחונות</Th>
                 <Th col="wins">נצחונות</Th>
                 <Th col="losses">הפסדים</Th>
+                <Th col="unknown">ללא תוצאה</Th>
                 <Th col="status">סטטוס</Th>
               </tr>
             </thead>
@@ -2427,6 +2437,7 @@ function StatsTable({ roster, cred, grades }) {
                     <td style={S.statsTd}>{winRate===null?"—":winRate+"%"}</td>
                     <td style={S.statsTd}>{s.wins||0}</td>
                     <td style={S.statsTd}>{s.losses||0}</td>
+                    <td style={S.statsTd}>{unknownOf(p)||0}</td>
                     <td style={S.statsTd}><span className={statusClass(p)}>{statusLabel(p)}</span></td>
                   </tr>
                 );
@@ -2642,6 +2653,13 @@ function PlayerStatsScreen({ player, cred, onBack }) {
   }, [player.id]);
   const decisive = stats ? Number(stats.wins) + Number(stats.losses) : 0;
   const winRate = decisive > 0 ? Math.round(Number(stats.wins) * 100 / decisive) : null;
+  // "ללא תוצאה" — משחקים שנוכחות ננעלה להם אבל אף פעם לא הוזנה תוצאה
+  // (למשל משחקים ישנים/מזדמנים, ר' migrations/0028) — נספרים ב-games_count
+  // אבל לא ב-wins/losses/draws כי אין תוצאה ידועה. "בדיקה פנימית" (ר'
+  // שיחה עם המשתמש — "חייבת להיות בדיקה שכמות נצחונות+הפסדים+תיקו שווה
+  // לסך המשחקים"): games_count = wins+losses+draws+unknown תמיד, בזכות
+  // שחשיפת הקטגוריה הזו כמספר משלה במקום להשאיר אותה "נעלמת".
+  const unknown = stats ? Number(stats.games_count) - Number(stats.wins) - Number(stats.losses) - Number(stats.draws) : 0;
   return (
     <section style={S.card}>
       <div style={S.rowBetween}>
@@ -2659,6 +2677,7 @@ function PlayerStatsScreen({ player, cred, onBack }) {
           <StatTile label="ניצחונות" value={stats.wins} color="#16a34a" />
           <StatTile label="הפסדים" value={stats.losses} color="#dc2626" />
           <StatTile label="תיקו" value={stats.draws} color="#64748b" />
+          {unknown > 0 && <StatTile label="ללא תוצאה" value={unknown} color="#9ca3af" />}
         </div>
       )}
     </section>

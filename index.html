@@ -126,7 +126,7 @@ class ErrorBoundary extends React.Component {
 // ==== שכבת גישה לנתונים ====
 const api = {
   async loadAll() {
-    const [players, preqs, admins, areqs, games, regs, declines, gameLog] = await Promise.all([
+    const [players, preqs, admins, areqs, games, regs, declines, attendanceRows] = await Promise.all([
       db.from("players").select("*"),
       db.from("player_requests").select("*"),
       db.from("admins").select("*"),
@@ -134,14 +134,14 @@ const api = {
       db.from("games").select("*"),
       db.from("registrations").select("id, game_id, player_id, ts, attended, guest_name"),
       db.from("game_declines").select("game_id, player_id, ts"),
-      // מקור אמת יחיד לספירת משחקי-שחקן (ר' migrations/0031, שיחה עם
-      // המשתמש — "רוצה בדיקה פנימית מנגנון שמוודא שתמיד הנתונים יוצאים
-      // מאותו מקור"). שם ה-RPC נשאר get_counted_results_players בכוונה
-      // (לא rename) — זו קריאה בלתי-מותנית בכל טעינת עמוד, אז rename
-      // היה שובר אותה בפועל מרגע שהקוד עולה ועד שה-SQL רץ (תפס ע"י
-      // e2e CI). ציבורי, בלי אישורי אדמין — נדרש גם למסך שחקן, לא רק
-      // לאדמין, ר' attendanceCounts למטה.
-      db.rpc("get_counted_results_players"),
+      // מקור אמת יחיד לספירת משחקי-שחקן (ר' migrations/0031+0032, שיחה
+      // עם המשתמש — "רוצה בדיקה פנימית מנגנון שמוודא שתמיד הנתונים
+      // יוצאים מאותו מקור"). get_player_attendance_counts מצטברת *בשרת*
+      // (שורה אחת לשחקן) — לא get_counted_results_players ישירות (שורה
+      // לכל משחק-ושחקן, אלפי שורות, נתקל בהגבלת שורות ברירת מחדל של
+      // RPC שחוצה HTTP). ציבורי, בלי אישורי אדמין — נדרש גם למסך שחקן,
+      // לא רק לאדמין, ר' attendanceCounts למטה.
+      db.rpc("get_player_attendance_counts"),
     ]);
     return {
       roster: players.data || [],
@@ -151,7 +151,7 @@ const api = {
       games: games.data || [],
       regs: regs.data || [],
       declines: declines.data || [],
-      gameLog: gameLog.data || [],
+      attendanceRows: attendanceRows.data || [],
     };
   },
   // בדיקת תפקיד — מוגן, לא חושף שום סוד. אף תפקיד לא ניתן לפי טלפון בלבד.
@@ -239,7 +239,7 @@ function App() {
   const [games, setGames] = useState([]);
   const [regs, setRegs] = useState([]);
   const [declines, setDeclines] = useState([]);
-  const [gameLog, setGameLog] = useState([]); // {game_id,player_id,outcome}[] — מקור אמת יחיד, ר' migrations/0031
+  const [attendanceRows, setAttendanceRows] = useState([]); // {player_id,games_count}[], מצטבר בשרת — ר' migrations/0032
 
   // ==== זהות אמיתית של השחקן — Supabase Auth (אימות מייל) ====
   const [session, setSession] = useState(null);
@@ -289,7 +289,7 @@ function App() {
     try {
       const d = await api.loadAll();
       setRoster(d.roster); setPending(d.pending); setAdmins(d.admins);
-      setAdminReqs(d.adminReqs); setGames(d.games); setRegs(d.regs); setDeclines(d.declines); setGameLog(d.gameLog);
+      setAdminReqs(d.adminReqs); setGames(d.games); setRegs(d.regs); setDeclines(d.declines); setAttendanceRows(d.attendanceRows);
       setErr("");
     } catch(e){ setErr("בעיה בחיבור לשרת. בדוק חיבור אינטרנט."); console.error(e); }
     setLoaded(true);
@@ -310,13 +310,13 @@ function App() {
     declines: declines.filter(d => d.game_id === g.id).map(d => ({ playerId: d.player_id, ts: d.ts })),
   }));
 
-  // ספירת הגעות מצטברת לכל שחקן — נספרת ישירות מ-gameLog, המקור הקנוני
-  // היחיד (ר' migrations/0031, שיחה עם המשתמש — "רוצה בדיקה פנימית
-  // מנגנון שמוודא שתמיד הנתונים יוצאים מאותו מקור"). get_counted_results_players
-  // כבר מחזירה כל משחק-ושחקן פעם אחת בלבד (חי+legacy+נוכחות-נעולה-בלי-
-  // תוצאה, בלי חפיפה מבנית) — אין יותר דה-דופליקציה עצמאית בצד הלקוח.
+  // ספירת הגעות מצטברת לכל שחקן — כבר מצטברת בשרת (get_player_attendance_counts,
+  // migrations/0032), שורה אחת לשחקן. אין יותר ספירת-שורות בצד הלקוח —
+  // זה בדיוק מה ששבר את המספרים (get_counted_results_players ישירות
+  // מהלקוח מחזירה שורה לכל משחק-ושחקן, אלפי שורות, נתקל בהגבלת שורות
+  // ברירת מחדל ל-RPC שחוצה HTTP ונחתך בשקט).
   const attendanceCounts = {};
-  gameLog.forEach(r => { attendanceCounts[r.player_id] = (attendanceCounts[r.player_id]||0) + 1; });
+  attendanceRows.forEach(r => { attendanceCounts[r.player_id] = r.games_count; });
 
   if (!loaded || !identityLoaded) return <div style={S.loading}>טוען…</div>;
 

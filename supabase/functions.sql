@@ -487,6 +487,23 @@ $$;
 
 grant execute on function get_counted_results_players() to anon, authenticated;
 
+-- "הגעות" ציבורי, מצטבר בשרת (ר' migrations/0032) — הקריאה הישירה
+-- מהלקוח ל-get_counted_results_players() עצמה (שורה אחת לכל משחק-
+-- ושחקן, אלפי שורות סה"כ) נתקלת בהגבלת שורות ברירת מחדל ל-RPC שחוצה
+-- HTTP (db-max-rows), נחתכת בשקט בלי ORDER BY → ספירה שגויה בצד
+-- הלקוח. כאן מצטברים *בשרת*, שורה אחת לשחקן (כמו admin_get_all_player_stats
+-- שכבר עושה את זה ולכן לא נפגעה — היא קוראת לפונקציה הפנימית, לא חוצה
+-- HTTP בעצמה).
+create or replace function get_player_attendance_counts()
+returns table(player_id text, games_count integer)
+language sql security definer as $$
+  select gc.player_id, count(*)::integer as games_count
+  from get_counted_results_players() gc
+  group by gc.player_id;
+$$;
+
+grant execute on function get_player_attendance_counts() to anon, authenticated;
+
 -- תיעוד תוצאות משחק (ר' migrations/0016) — צעד ראשון לקראת שלב C
 -- (כימיה/אחוזי-ניצחון), לא תלוי בייבוא היסטוריה מ-TeamPicker. דורש
 -- שחלוקת קבוצות כבר נשמרה לאותו משחק (אכיפה בצד השרת).

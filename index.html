@@ -910,9 +910,8 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
   const [hint,setHint]=useState(null); // 'super' | 'admin' | null — רמז בלבד, לא מעניק הרשאה
   // טאב תחתון (ר' שיחה עם המשתמש — בהשראת הניווט של TeamPicker) — רק
   // לאדמין-על, שיש לו גם "משחקים" וגם "שחקנים"; מנהל רגיל רואה רק משחקים,
-  // אין טעם בטאבים בשבילו. "insights"/סטטיסטיקה עתידית — טאב שלישי שיתווסף
-  // כשיהיה לו תוכן אמיתי, לא placeholder ריק עכשיו.
-  const [activeTab,setActiveTab]=useState("games"); // "games" | "history" | "players"
+  // אין טעם בטאבים בשבילו.
+  const [activeTab,setActiveTab]=useState("games"); // "games" | "history" | "players" | "stats"
   // דירוגי שחקנים לחלוקת כוחות (ר' migrations/0014) — נשמרים בטבלה נעולה,
   // בלי SELECT ציבורי, נטענים רק כאן דרך RPC אדמין אחרי התחברות מוצלחת.
   const [grades,setGrades]=useState({});
@@ -1009,6 +1008,9 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
               <span style={S.pendingBadge}>{pending.length}</span>
             )}
           </button>
+          <button style={activeTab==="stats"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("stats")}>
+            📊 סטטיסטיקה
+          </button>
         </nav>
       )}
       {isSuper ? (
@@ -1021,6 +1023,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
               <AdminRoster {...{ roster, admins, refresh, cred, attendanceCounts, grades, refreshGrades }} />
             </>
           )}
+          {activeTab==="stats" && <StatsTable roster={roster} cred={cred} grades={grades} />}
         </>
       ) : (
         <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />
@@ -1707,6 +1710,18 @@ function renderFormDots(outcomes) {
   );
 }
 
+// תיוג גניגרי/ותיק/רגיל לשחקן — הוצא מ-AdminRoster (היה פנימי שם
+// בלבד) כדי ש-StatsTable (טאב "📊 סטטיסטיקה") תוכל להשתמש באותו
+// תיוג בדיוק, בלי לשכפל/לסטות מהמקור.
+const rankOf = p => (p.is_ganigari && p.is_vatik) ? 4 : p.is_ganigari ? 3 : p.is_vatik ? 2 : 1;
+const statusLabel = p => {
+  if (p.is_ganigari && p.is_vatik) return "גניגרי + ותיק";
+  if (p.is_ganigari) return "גניגרי";
+  if (p.is_vatik) return "ותיק";
+  return "רגיל";
+};
+const statusClass = p => (p.is_ganigari && p.is_vatik) ? "badge gv" : p.is_ganigari ? "badge g" : p.is_vatik ? "badge v" : "badge r";
+
 function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }) {
   const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts,attended:r.attended,guest_name:r.guestName})), roster, attendanceCounts);
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
@@ -2308,6 +2323,87 @@ function EditableRow({ i, name, onUp, onDown, onRemove, wait, attended, onToggle
   );
 }
 
+// טאב "📊 סטטיסטיקה" (ר' שיחה עם המשתמש — "כל שחקנים מאושרים, פילטר
+// וחיפוש, טור של שם שחקן/ציון/אחוז נצחונות/נצחונות/הפסדים, וגם טור
+// של גניגרי/ותיק/רגיל"). RPC אחד (admin_get_all_player_stats,
+// migrations/0029) מחזיר סטטיסטיקה לכל השחקנים בבת אחת — לא N קריאות
+// בלולאה. שחקנים בלי שום היסטוריה לא חוזרים מה-RPC בכלל; ברירת מחדל 0
+// (כמו grades[p.id]??50 הקיים) שומרת עליהם ברשימה.
+function StatsTable({ roster, cred, grades }) {
+  const [stats,setStats] = useState({}); // player_id -> {games_count,wins,losses,draws}
+  const [loading,setLoading] = useState(true);
+  const [search,setSearch] = useState("");
+  const [groupFilter,setGroupFilter] = useState("all"); // "all" | "primary" | "secondary"
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const rows = await callAdmin("admin_get_all_player_stats", { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
+      const map = {};
+      (rows||[]).forEach(r => { map[r.player_id] = r; });
+      if (alive) { setStats(map); setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const q = normName(search);
+  const sorted = [...roster].sort((a,b) => rankOf(b) - rankOf(a));
+  const filtered = sorted.filter(p =>
+    (!q || normName(p.name).includes(q)) &&
+    (groupFilter==="all" || (p.player_group||"primary")===groupFilter)
+  );
+
+  return (
+    <section style={S.card}>
+      <h2 style={S.h2}>📊 סטטיסטיקה ({roster.length})</h2>
+      <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+        <input style={{...S.input,flex:1,minWidth:160}} placeholder="🔍 חיפוש לפי שם…" value={search} onChange={e=>setSearch(e.target.value)} />
+        {search && <button className="btn small" onClick={()=>setSearch("")}>נקה ✕</button>}
+        <select style={S.selectSm} value={groupFilter} onChange={e=>setGroupFilter(e.target.value)}>
+          <option value="all">כל הקבוצות</option>
+          <option value="primary">קבוצה ראשית</option>
+          <option value="secondary">קבוצה משנית</option>
+        </select>
+      </div>
+      {loading && <div style={{...S.subLine,marginTop:10,textAlign:"center"}}>טוען…</div>}
+      {!loading && (
+        <div style={S.statsTableWrap}>
+          <table style={S.statsTable}>
+            <thead>
+              <tr>
+                <th style={S.statsTh}>שם</th>
+                <th style={S.statsTh}>סטטוס</th>
+                <th style={S.statsTh}>ציון</th>
+                <th style={S.statsTh}>אחוז נצחונות</th>
+                <th style={S.statsTh}>נצחונות</th>
+                <th style={S.statsTh}>הפסדים</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(p => {
+                const s = stats[p.id] || { wins:0, losses:0 };
+                const decisive = Number(s.wins) + Number(s.losses);
+                const winRate = decisive > 0 ? Math.round(Number(s.wins) * 100 / decisive) : null;
+                return (
+                  <tr key={p.id}>
+                    <td style={S.statsTd}>{p.name}</td>
+                    <td style={S.statsTd}><span className={statusClass(p)}>{statusLabel(p)}</span></td>
+                    <td style={S.statsTd}>{grades[p.id] ?? 50}</td>
+                    <td style={S.statsTd}>{winRate===null?"—":winRate+"%"}</td>
+                    <td style={S.statsTd}>{s.wins||0}</td>
+                    <td style={S.statsTd}>{s.losses||0}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {filtered.length===0 && <p style={{...S.hint,marginTop:10}}>אין שחקנים תואמים.</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AdminRoster({ roster, admins, refresh, cred, attendanceCounts, grades, refreshGrades }) {
   // מסך "מידע על שחקן" (ר' migrations/0022, שיחה עם המשתמש — "כאשר לוחצים
   // על שחקן כלשהו ייפתח מידע רלוונטי כמו אצל דרור") — מחליף את תוכן
@@ -2384,21 +2480,12 @@ function AdminRoster({ roster, admins, refresh, cred, attendanceCounts, grades, 
     return true;
   };
 
-  const rankOf = p => (p.is_ganigari && p.is_vatik) ? 4 : p.is_ganigari ? 3 : p.is_vatik ? 2 : 1;
   const sorted = [...roster].sort((a,b) => rankOf(b) - rankOf(a));
   // מסנן תצוגה בלבד — exportExcel/shareRosterWa ממשיכים לעבוד על כל הרשימה
   // (sorted), לא על מה שמסונן כרגע בחיפוש. המספור נשאר לפי המיקום המקורי
   // ברשימה המלאה (לא ממוספר מחדש לפי תוצאות החיפוש).
   const q = normName(search);
   const filtered = sorted.map((p,i)=>({p,i})).filter(({p}) => !q || normName(p.name).includes(q));
-
-  const statusLabel = p => {
-    if (p.is_ganigari && p.is_vatik) return "גניגרי + ותיק";
-    if (p.is_ganigari) return "גניגרי";
-    if (p.is_vatik) return "ותיק";
-    return "רגיל";
-  };
-  const statusClass = p => (p.is_ganigari && p.is_vatik) ? "badge gv" : p.is_ganigari ? "badge g" : p.is_vatik ? "badge v" : "badge r";
 
   const exportExcel = () => {
     const rows = sorted.map((p,i) => ({
@@ -2819,6 +2906,13 @@ const S = {
   pendActions: { display:"flex", gap:6, flexWrap:"wrap" },
   errorBox: { maxWidth:360, margin:"60px auto", padding:24, background:"#fff", border:"1px solid #e2e8e2", borderRadius:14, textAlign:"center" },
   errorRow: { padding:"8px 10px", borderRadius:8, background:"#fef2f2", border:"1px solid #fecaca", marginBottom:6 },
+  // טאב "📊 סטטיסטיקה" — אין <table> אחר באפליקציה עד כה. עטיפה עם
+  // overflowX:"auto" כדי להישאר שמיש במובייל צר בלי לעצב מחדש לכרטיסים
+  // (לקח מ"עדכון 12" על שורות צפופות מדי בפאנל החלוקה).
+  statsTableWrap: { overflowX:"auto", marginTop:10 },
+  statsTable: { width:"100%", borderCollapse:"collapse", fontSize:13, whiteSpace:"nowrap" },
+  statsTh: { textAlign:"right", padding:"8px 10px", borderBottom:"2px solid #e2e8e2", fontWeight:800, color:"#374151" },
+  statsTd: { padding:"8px 10px", borderBottom:"1px solid #eef2ee" },
 };
 
 ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App /></ErrorBoundary>);

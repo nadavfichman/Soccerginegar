@@ -2353,6 +2353,7 @@ function StatsTable({ roster, cred, grades }) {
   };
   const sortValue = (p, col) => {
     if (col === "name") return p.name;
+    if (col === "games") return Number((stats[p.id]||{}).games_count) || 0;
     if (col === "grade") return grades[p.id] ?? 50;
     if (col === "winrate") return winRateOf(p);
     if (col === "wins") return Number((stats[p.id]||{}).wins) || 0;
@@ -2406,6 +2407,7 @@ function StatsTable({ roster, cred, grades }) {
                   ר' שיחה עם המשתמש: "רחב מדיי... קודם נתונים... שיהיה דווקא בסוף" */}
               <tr>
                 <Th col="name">שם</Th>
+                <Th col="games">משחקים</Th>
                 <Th col="grade">ציון</Th>
                 <Th col="winrate">אחוז נצחונות</Th>
                 <Th col="wins">נצחונות</Th>
@@ -2415,11 +2417,12 @@ function StatsTable({ roster, cred, grades }) {
             </thead>
             <tbody>
               {rows.map(p => {
-                const s = stats[p.id] || { wins:0, losses:0 };
+                const s = stats[p.id] || { games_count:0, wins:0, losses:0 };
                 const winRate = winRateOf(p);
                 return (
                   <tr key={p.id}>
                     <td style={S.statsTd}>{p.name}</td>
+                    <td style={S.statsTd}>{s.games_count||0}</td>
                     <td style={S.statsTd}>{grades[p.id] ?? 50}</td>
                     <td style={S.statsTd}>{winRate===null?"—":winRate+"%"}</td>
                     <td style={S.statsTd}>{s.wins||0}</td>

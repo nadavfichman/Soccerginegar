@@ -13,16 +13,22 @@
 -- (דרך get_counted_results_players) חסרה את מקור "נוכחות-נעולה-בלי-
 -- תוצאה" ש-admin_get_*_player_stats כן כוללות. זה הגורם האמיתי לפער.
 --
--- פתרון: פונקציה ציבורית קנונית אחת, get_player_game_log(), מחליפה
--- את get_counted_results_players (מבוטלת) ומחזירה את שלושת המקורות
--- בבת אחת כולל outcome. admin_get_player_stats/admin_get_all_player_stats
--- מתכווצות ל-SELECT פשוט ממנה, בלי לשכפל אף לוגיקה. index.html ייקרא
--- ממנה ישירות במקום לחשב דה-דופליקציה עצמאית בצד הלקוח.
+-- פתרון: get_counted_results_players הופכת לעצמה למקור הקנוני (לא
+-- מוחלפת בשם חדש!) — מורחבת לכלול גם outcome וגם את מקור "נוכחות-
+-- נעולה-בלי-תוצאה". **בכוונה לא rename** ל-get_player_game_log כמו
+-- בניסיון הראשון: זו פונקציה ציבורית שנקראת בלי תנאי בכל טעינת עמוד
+-- (api.loadAll, index.html) — rename היה שובר אותה בפועל בכל טעינה
+-- מהרגע שהקוד עולה ועד שה-SQL הזה רץ (ה-e2e CI תפס את זה: 404 על RPC
+-- לשם-שעוד-לא-קיים נרשם כשגיאת קונסולה ע"י Chromium, גם בלי קריסה
+-- אמיתית ב-JS). שמירת השם הקיים = אין בכלל חלון-זמן שבור, גם לא רגע
+-- אחד, כי הפונקציה הישנה ממשיכה לשרת (בהיקף הישן) עד שה-SQL רץ.
+-- admin_get_player_stats/admin_get_all_player_stats מתכווצות ל-SELECT
+-- פשוט מ-get_counted_results_players(), בלי לשכפל אף לוגיקה.
 -- ============================================================================
 
 drop function if exists get_counted_results_players();
 
-create or replace function get_player_game_log()
+create or replace function get_counted_results_players()
 returns table(game_id text, player_id text, outcome text)
 language sql security definer as $$
   select gt.game_id, gt.player_id,
@@ -52,7 +58,7 @@ language sql security definer as $$
     );
 $$;
 
-grant execute on function get_player_game_log() to anon, authenticated;
+grant execute on function get_counted_results_players() to anon, authenticated;
 
 create or replace function admin_get_player_stats(input_player_id text, input_pw text, input_phone text, input_pin text)
 returns table(games_count integer, wins integer, losses integer, draws integer)
@@ -62,11 +68,11 @@ begin
   v_role := require_admin(input_pw, input_phone, input_pin);
   return query
     select count(*)::integer as games_count,
-      coalesce(sum((gpl.outcome = 'win')::integer), 0)::integer as wins,
-      coalesce(sum((gpl.outcome = 'loss')::integer), 0)::integer as losses,
-      coalesce(sum((gpl.outcome = 'draw')::integer), 0)::integer as draws
-    from get_player_game_log() gpl
-    where gpl.player_id = input_player_id;
+      coalesce(sum((gc.outcome = 'win')::integer), 0)::integer as wins,
+      coalesce(sum((gc.outcome = 'loss')::integer), 0)::integer as losses,
+      coalesce(sum((gc.outcome = 'draw')::integer), 0)::integer as draws
+    from get_counted_results_players() gc
+    where gc.player_id = input_player_id;
 end; $$;
 
 create or replace function admin_get_all_player_stats(input_pw text, input_phone text, input_pin text)
@@ -76,11 +82,11 @@ declare v_role text;
 begin
   v_role := require_admin(input_pw, input_phone, input_pin);
   return query
-    select gpl.player_id,
+    select gc.player_id,
       count(*)::integer as games_count,
-      coalesce(sum((gpl.outcome = 'win')::integer), 0)::integer as wins,
-      coalesce(sum((gpl.outcome = 'loss')::integer), 0)::integer as losses,
-      coalesce(sum((gpl.outcome = 'draw')::integer), 0)::integer as draws
-    from get_player_game_log() gpl
-    group by gpl.player_id;
+      coalesce(sum((gc.outcome = 'win')::integer), 0)::integer as wins,
+      coalesce(sum((gc.outcome = 'loss')::integer), 0)::integer as losses,
+      coalesce(sum((gc.outcome = 'draw')::integer), 0)::integer as draws
+    from get_counted_results_players() gc
+    group by gc.player_id;
 end; $$;

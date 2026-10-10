@@ -444,15 +444,18 @@ grant execute on function get_published_teams_form(text) to anon, authenticated;
 
 -- מקור אמת יחיד לכל ספירת משחקי-שחקן באפליקציה (ר' migrations/0031,
 -- שיחה עם המשתמש — "יש רק כמות הגעה אחת נכונה... רוצה בדיקה פנימית
--- מנגנון שמוודא שתמיד הנתונים יוצאים מאותו מקור"). מחליפה את
--- get_counted_results_players (בוטלה) — היו שלושה מימושים עצמאיים של
--- אותה ספירה בדיוק (attendanceCounts בצד לקוח, admin_get_player_stats,
--- admin_get_all_player_stats) שסטו זה מזה. ציבורי כמו get_published_teams
--- — attendanceCounts (index.html) נקרא ישירות ממנה, גם למסך שחקן רגיל,
--- לא רק לאדמין. שלושת המקורות (חי/legacy/נוכחות-נעולה-בלי-תוצאה) לא
--- חופפים מבנית (union all, לא union) — "legacy:" prefix מונע התנגשות
--- עם מקור 1, ה-not exists במקור 3 מונע חפיפה עם מקור 1.
-create or replace function get_player_game_log()
+-- מנגנון שמוודא שתמיד הנתונים יוצאים מאותו מקור"). היו שלושה מימושים
+-- עצמאיים של אותה ספירה בדיוק (attendanceCounts בצד לקוח,
+-- admin_get_player_stats, admin_get_all_player_stats) שסטו זה מזה.
+-- מורחבת (לא מוחלפת בשם חדש — rename שבר בפועל את הטעינה הבלתי-
+-- מותנית של כל עמוד, תפס ע"י ה-e2e CI: 404 על RPC לשם-שעוד-לא-קיים
+-- נרשם כשגיאת קונסולה) לכלול גם outcome וגם את מקור "נוכחות-נעולה-
+-- בלי-תוצאה". ציבורי כמו get_published_teams — attendanceCounts
+-- (index.html) נקרא ישירות ממנה, גם למסך שחקן רגיל, לא רק לאדמין.
+-- שלושת המקורות לא חופפים מבנית (union all, לא union) — "legacy:"
+-- prefix מונע התנגשות עם מקור 1, ה-not exists במקור 3 מונע חפיפה
+-- עם מקור 1.
+create or replace function get_counted_results_players()
 returns table(game_id text, player_id text, outcome text)
 language sql security definer as $$
   select gt.game_id, gt.player_id,
@@ -482,7 +485,7 @@ language sql security definer as $$
     );
 $$;
 
-grant execute on function get_player_game_log() to anon, authenticated;
+grant execute on function get_counted_results_players() to anon, authenticated;
 
 -- תיעוד תוצאות משחק (ר' migrations/0016) — צעד ראשון לקראת שלב C
 -- (כימיה/אחוזי-ניצחון), לא תלוי בייבוא היסטוריה מ-TeamPicker. דורש
@@ -661,7 +664,7 @@ begin
 end; $$;
 
 -- "מידע על שחקן" (ר' migrations/0022, פושטה ב-0031) — SELECT פשוט
--- מהמקור הקנוני get_player_game_log(), בלי לשכפל אף לוגיקה.
+-- מהמקור הקנוני get_counted_results_players(), בלי לשכפל אף לוגיקה.
 create or replace function admin_get_player_stats(input_player_id text, input_pw text, input_phone text, input_pin text)
 returns table(games_count integer, wins integer, losses integer, draws integer)
 language plpgsql security definer as $$
@@ -670,17 +673,17 @@ begin
   v_role := require_admin(input_pw, input_phone, input_pin);
   return query
     select count(*)::integer as games_count,
-      coalesce(sum((gpl.outcome = 'win')::integer), 0)::integer as wins,
-      coalesce(sum((gpl.outcome = 'loss')::integer), 0)::integer as losses,
-      coalesce(sum((gpl.outcome = 'draw')::integer), 0)::integer as draws
-    from get_player_game_log() gpl
-    where gpl.player_id = input_player_id;
+      coalesce(sum((gc.outcome = 'win')::integer), 0)::integer as wins,
+      coalesce(sum((gc.outcome = 'loss')::integer), 0)::integer as losses,
+      coalesce(sum((gc.outcome = 'draw')::integer), 0)::integer as draws
+    from get_counted_results_players() gc
+    where gc.player_id = input_player_id;
 end; $$;
 
 -- "סטטיסטיקה" (ר' migrations/0029, פושטה ב-0031) — אותו SELECT מהמקור
 -- הקנוני, רק group by לכל השחקנים בבת אחת (לא N קריאות בלולאה).
 -- מחזירה שורות רק לשחקנים עם לפחות משחק אחד — הלקוח ממלא 0 לשחקנים
--- בלי היסטוריה. alias מפורש לפונקציה (gpl) כדי למנוע עמימות עם
+-- בלי היסטוריה. alias מפורש לפונקציה (gc) כדי למנוע עמימות עם
 -- משתנה-OUT בשם player_id שה-RETURNS TABLE יוצר (ר' migrations/0030).
 create or replace function admin_get_all_player_stats(input_pw text, input_phone text, input_pin text)
 returns table(player_id text, games_count integer, wins integer, losses integer, draws integer)
@@ -689,13 +692,13 @@ declare v_role text;
 begin
   v_role := require_admin(input_pw, input_phone, input_pin);
   return query
-    select gpl.player_id,
+    select gc.player_id,
       count(*)::integer as games_count,
-      coalesce(sum((gpl.outcome = 'win')::integer), 0)::integer as wins,
-      coalesce(sum((gpl.outcome = 'loss')::integer), 0)::integer as losses,
-      coalesce(sum((gpl.outcome = 'draw')::integer), 0)::integer as draws
-    from get_player_game_log() gpl
-    group by gpl.player_id;
+      coalesce(sum((gc.outcome = 'win')::integer), 0)::integer as wins,
+      coalesce(sum((gc.outcome = 'loss')::integer), 0)::integer as losses,
+      coalesce(sum((gc.outcome = 'draw')::integer), 0)::integer as draws
+    from get_counted_results_players() gc
+    group by gc.player_id;
 end; $$;
 
 -- הוחלפו (drop + create) כי היו קיימות קודם עם 2 פרמטרים בלבד, בלי אימות הרשאה כלל

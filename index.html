@@ -2952,9 +2952,13 @@ const S = {
   // טאב "📊 סטטיסטיקה" — אין <table> אחר באפליקציה עד כה. עטיפה עם
   // overflowX:"auto" כדי להישאר שמיש במובייל צר בלי לעצב מחדש לכרטיסים
   // (לקח מ"עדכון 12" על שורות צפופות מדי בפאנל החלוקה).
-  statsTableWrap: { overflowX:"auto", marginTop:10 },
+  // גלילה אנכית עצמאית בתוך העטיפה (לא גלילת הדף כולו) — כדי ששורת
+  // הכותרת תוכל להיות position:sticky יחסית לעטיפה הזו בלבד, בלי צורך
+  // לחשב offset משותף עם ה-header/tabSwitcher הדביקים שמעליה (ר' שיחה
+  // עם המשתמש — "שורת כותרת תשאר מקובעת כאשר גולל למטה ולמעלה").
+  statsTableWrap: { overflowX:"auto", overflowY:"auto", maxHeight:"65vh", marginTop:10 },
   statsTable: { width:"100%", borderCollapse:"collapse", fontSize:13, whiteSpace:"nowrap" },
-  statsTh: { textAlign:"right", padding:"8px 10px", borderBottom:"2px solid #e2e8e2", fontWeight:800, color:"#374151" },
+  statsTh: { textAlign:"right", padding:"8px 10px", borderBottom:"2px solid #e2e8e2", fontWeight:800, color:"#374151", position:"sticky", top:0, background:"#fff", zIndex:1 },
   statsTd: { padding:"8px 10px", borderBottom:"1px solid #eef2ee" },
 };
 

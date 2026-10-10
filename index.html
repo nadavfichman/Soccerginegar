@@ -2334,6 +2334,12 @@ function StatsTable({ roster, cred, grades }) {
   const [loading,setLoading] = useState(true);
   const [search,setSearch] = useState("");
   const [groupFilter,setGroupFilter] = useState("all"); // "all" | "primary" | "secondary"
+  // מיון לפי לחיצה על כותרת טור — מחזור תלת-מצבי (ר' שיחה עם המשתמש):
+  // לחיצה 1 על כותרת = עולה, לחיצה 2 (אותו טור) = יורד, לחיצה 3 = חזרה
+  // לסדר המקורי (sortCol=null, נופל ל-rankOf כמו היום). לחיצה על טור אחר
+  // מתחילה מ"עולה" מחדש לטור החדש.
+  const [sortCol,setSortCol] = useState(null);
+  const [sortDir,setSortDir] = useState(null); // "asc" | "desc" | null
 
   useEffect(() => {
     let alive = true;
@@ -2346,11 +2352,47 @@ function StatsTable({ roster, cred, grades }) {
     return () => { alive = false; };
   }, []);
 
+  const toggleSort = (col) => {
+    if (sortCol !== col) { setSortCol(col); setSortDir("asc"); return; }
+    if (sortDir === "asc") { setSortDir("desc"); return; }
+    setSortCol(null); setSortDir(null);
+  };
+  const winRateOf = p => {
+    const s = stats[p.id] || { wins:0, losses:0 };
+    const decisive = Number(s.wins) + Number(s.losses);
+    return decisive > 0 ? Math.round(Number(s.wins) * 100 / decisive) : null;
+  };
+  const sortValue = (p, col) => {
+    if (col === "name") return p.name;
+    if (col === "grade") return grades[p.id] ?? 50;
+    if (col === "winrate") return winRateOf(p);
+    if (col === "wins") return Number((stats[p.id]||{}).wins) || 0;
+    if (col === "losses") return Number((stats[p.id]||{}).losses) || 0;
+    if (col === "status") return rankOf(p);
+  };
+
   const q = normName(search);
-  const sorted = [...roster].sort((a,b) => rankOf(b) - rankOf(a));
-  const filtered = sorted.filter(p =>
+  let rows = roster.filter(p =>
     (!q || normName(p.name).includes(q)) &&
     (groupFilter==="all" || (p.player_group||"primary")===groupFilter)
+  );
+  if (sortCol) {
+    rows = [...rows].sort((a,b) => {
+      const va = sortValue(a,sortCol), vb = sortValue(b,sortCol);
+      if (va===null && vb===null) return 0;
+      if (va===null) return 1; // "—" (בלי אחוז נצחונות) תמיד בסוף, בכל כיוון מיון
+      if (vb===null) return -1;
+      const cmp = typeof va==="string" ? va.localeCompare(vb,"he") : va-vb;
+      return sortDir==="asc" ? cmp : -cmp;
+    });
+  } else {
+    rows = [...rows].sort((a,b) => rankOf(b) - rankOf(a));
+  }
+
+  const Th = ({ col, children }) => (
+    <th style={{...S.statsTh,cursor:"pointer",userSelect:"none"}} onClick={()=>toggleSort(col)}>
+      {children}{sortCol===col ? (sortDir==="asc"?" ▲":" ▼") : ""}
+    </th>
   );
 
   return (
@@ -2370,34 +2412,35 @@ function StatsTable({ roster, cred, grades }) {
         <div style={S.statsTableWrap}>
           <table style={S.statsTable}>
             <thead>
+              {/* נתונים קודם, סטטוס (גניגרי/ותיק/רגיל — התג הכי רחב) בסוף —
+                  ר' שיחה עם המשתמש: "רחב מדיי... קודם נתונים... שיהיה דווקא בסוף" */}
               <tr>
-                <th style={S.statsTh}>שם</th>
-                <th style={S.statsTh}>סטטוס</th>
-                <th style={S.statsTh}>ציון</th>
-                <th style={S.statsTh}>אחוז נצחונות</th>
-                <th style={S.statsTh}>נצחונות</th>
-                <th style={S.statsTh}>הפסדים</th>
+                <Th col="name">שם</Th>
+                <Th col="grade">ציון</Th>
+                <Th col="winrate">אחוז נצחונות</Th>
+                <Th col="wins">נצחונות</Th>
+                <Th col="losses">הפסדים</Th>
+                <Th col="status">סטטוס</Th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map(p => {
+              {rows.map(p => {
                 const s = stats[p.id] || { wins:0, losses:0 };
-                const decisive = Number(s.wins) + Number(s.losses);
-                const winRate = decisive > 0 ? Math.round(Number(s.wins) * 100 / decisive) : null;
+                const winRate = winRateOf(p);
                 return (
                   <tr key={p.id}>
                     <td style={S.statsTd}>{p.name}</td>
-                    <td style={S.statsTd}><span className={statusClass(p)}>{statusLabel(p)}</span></td>
                     <td style={S.statsTd}>{grades[p.id] ?? 50}</td>
                     <td style={S.statsTd}>{winRate===null?"—":winRate+"%"}</td>
                     <td style={S.statsTd}>{s.wins||0}</td>
                     <td style={S.statsTd}>{s.losses||0}</td>
+                    <td style={S.statsTd}><span className={statusClass(p)}>{statusLabel(p)}</span></td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-          {filtered.length===0 && <p style={{...S.hint,marginTop:10}}>אין שחקנים תואמים.</p>}
+          {rows.length===0 && <p style={{...S.hint,marginTop:10}}>אין שחקנים תואמים.</p>}
         </div>
       )}
     </section>

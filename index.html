@@ -2388,8 +2388,8 @@ function StatsTable({ roster, cred, grades }) {
     rows = [...rows].sort((a,b) => rankOf(b) - rankOf(a));
   }
 
-  const Th = ({ col, children }) => (
-    <th style={{...S.statsTh,cursor:"pointer",userSelect:"none"}} onClick={()=>toggleSort(col)}>
+  const Th = ({ col, children, sticky }) => (
+    <th style={{...S.statsTh,...(sticky?S.statsNameThSticky:{}),cursor:"pointer",userSelect:"none"}} onClick={()=>toggleSort(col)}>
       {children}{sortCol===col ? (sortDir==="asc"?" ▲":" ▼") : ""}
     </th>
   );
@@ -2415,7 +2415,7 @@ function StatsTable({ roster, cred, grades }) {
               {/* נתונים קודם, סטטוס (גניגרי/ותיק/רגיל — התג הכי רחב) בסוף —
                   ר' שיחה עם המשתמש: "רחב מדיי... קודם נתונים... שיהיה דווקא בסוף" */}
               <tr>
-                <Th col="name">שם</Th>
+                <Th col="name" sticky>שם</Th>
                 <Th col="games">משחקים</Th>
                 <Th col="grade">ציון</Th>
                 <Th col="winrate">אחוז נצחונות</Th>
@@ -2431,7 +2431,7 @@ function StatsTable({ roster, cred, grades }) {
                 const winRate = winRateOf(p);
                 return (
                   <tr key={p.id}>
-                    <td style={S.statsTd}>{p.name}</td>
+                    <td style={{...S.statsTd,...S.statsNameTdSticky}}>{p.name}</td>
                     <td style={S.statsTd}>{s.games_count||0}</td>
                     <td style={S.statsTd}>{grades[p.id] ?? 50}</td>
                     <td style={S.statsTd}>{winRate===null?"—":winRate+"%"}</td>
@@ -2974,6 +2974,14 @@ const S = {
   statsTable: { width:"100%", borderCollapse:"collapse", fontSize:13, whiteSpace:"nowrap" },
   statsTh: { textAlign:"right", padding:"8px 10px", borderBottom:"2px solid #e2e8e2", fontWeight:800, color:"#374151", position:"sticky", top:0, background:"#fff", zIndex:1 },
   statsTd: { padding:"8px 10px", borderBottom:"1px solid #eef2ee" },
+  // טור "שם" מקובע גם אופקית (ר' שיחה עם המשתמש — "גם כשאני זז לראות
+  // את הקבוצה המשנית... אני חייב לראות את השם"). right:0 (לא left) כי
+  // dir="rtl" — העמודה הראשונה בטבלה (שם) יושבת בקצה הימני, ששם היא
+  // צריכה להישאר מקובעת תוך גלילה אופקית. zIndex גבוה מה-th הרגילים
+  // (1) כי תא הפינה (שם+כותרת) מקובע בו-זמנית אופקית ואנכית, וצריך
+  // להישאר מעל גם את שורת הכותרת הדביקה וגם את טור השם הדביק בגוף.
+  statsNameThSticky: { position:"sticky", right:0, zIndex:3, boxShadow:"2px 0 4px rgba(0,0,0,.06)" },
+  statsNameTdSticky: { position:"sticky", right:0, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,.06)" },
 };
 
 ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App /></ErrorBoundary>);

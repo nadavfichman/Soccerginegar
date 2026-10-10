@@ -449,12 +449,16 @@ grant execute on function get_published_teams_form(text) to anon, authenticated;
 -- admin_get_player_stats, admin_get_all_player_stats) שסטו זה מזה.
 -- מורחבת (לא מוחלפת בשם חדש — rename שבר בפועל את הטעינה הבלתי-
 -- מותנית של כל עמוד, תפס ע"י ה-e2e CI: 404 על RPC לשם-שעוד-לא-קיים
--- נרשם כשגיאת קונסולה) לכלול גם outcome וגם את מקור "נוכחות-נעולה-
--- בלי-תוצאה". ציבורי כמו get_published_teams — attendanceCounts
--- (index.html) נקרא ישירות ממנה, גם למסך שחקן רגיל, לא רק לאדמין.
--- שלושת המקורות לא חופפים מבנית (union all, לא union) — "legacy:"
--- prefix מונע התנגשות עם מקור 1, ה-not exists במקור 3 מונע חפיפה
--- עם מקור 1.
+-- נרשם כשגיאת קונסולה) לכלול גם outcome. ציבורי כמו get_published_teams
+-- — attendanceCounts (index.html) נקרא ישירות ממנה, גם למסך שחקן
+-- רגיל, לא רק לאדמין.
+--
+-- migrations/0033: הוסר מקור שלישי ("נוכחות נעולה בלי תוצאה", שהיה פה
+-- עד 0028) — המשתמש קבע במפורש: "כמות המשחקים... חייבת להוציא תמיד
+-- לכמות ניצחונות פלוס הפסדים פלוס תיקו. אחרת כל המידע שלנו מעוות."
+-- עכשיו רק משחקים עם outcome ידוע נספרים בכלל — games_count=wins+
+-- losses+draws תמיד, בלי קטגוריית "ללא תוצאה". שני המקורות לא חופפים
+-- מבנית — "legacy:" prefix מונע התנגשות עם מקור 1.
 create or replace function get_counted_results_players()
 returns table(game_id text, player_id text, outcome text)
 language sql security definer as $$
@@ -471,18 +475,7 @@ language sql security definer as $$
   join game_results gr on gr.game_id = gt.game_id
   union all
   select 'legacy:'||lpg.source_game_id, lpg.player_id, lpg.outcome
-  from legacy_player_games lpg
-  union all
-  select r.game_id, r.player_id, null::text as outcome
-  from registrations r
-  join games g on g.id = r.game_id
-  where r.attended = true
-    and g.attendance_locked = true
-    and not exists (
-      select 1 from game_teams gt2
-      join game_results gr2 on gr2.game_id = gt2.game_id
-      where gt2.game_id = r.game_id and gt2.player_id = r.player_id
-    );
+  from legacy_player_games lpg;
 $$;
 
 grant execute on function get_counted_results_players() to anon, authenticated;

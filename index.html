@@ -1023,7 +1023,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
               <AdminRoster {...{ roster, admins, refresh, cred, attendanceCounts, grades, refreshGrades }} />
             </>
           )}
-          {activeTab==="stats" && <StatsTable roster={roster} cred={cred} grades={grades} />}
+          {activeTab==="stats" && <StatsTable roster={roster} cred={cred} grades={grades} attendanceCounts={attendanceCounts} />}
         </>
       ) : (
         <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />
@@ -2329,7 +2329,7 @@ function EditableRow({ i, name, onUp, onDown, onRemove, wait, attended, onToggle
 // migrations/0029) מחזיר סטטיסטיקה לכל השחקנים בבת אחת — לא N קריאות
 // בלולאה. שחקנים בלי שום היסטוריה לא חוזרים מה-RPC בכלל; ברירת מחדל 0
 // (כמו grades[p.id]??50 הקיים) שומרת עליהם ברשימה.
-function StatsTable({ roster, cred, grades }) {
+function StatsTable({ roster, cred, grades, attendanceCounts }) {
   const [stats,setStats] = useState({}); // player_id -> {games_count,wins,losses,draws}
   const [loading,setLoading] = useState(true);
   const [search,setSearch] = useState("");
@@ -2368,8 +2368,14 @@ function StatsTable({ roster, cred, grades }) {
     if (col === "winrate") return winRateOf(p);
     if (col === "wins") return Number((stats[p.id]||{}).wins) || 0;
     if (col === "losses") return Number((stats[p.id]||{}).losses) || 0;
+    if (col === "attendance") return (attendanceCounts && attendanceCounts[p.id]) || 0;
     if (col === "status") return rankOf(p);
   };
+  // מנגנון בדיקה (ר' שיחה עם המשתמש — "רוצה שתעשה מנגנון בדיקה שבודק
+  // שהמספרים זהים בכמות משחקים"): attendanceCounts (תג "הגעות") ו-
+  // games_count (RPC, "משחקים") אמורים לפי הקוד להיות זהים לכל שחקן —
+  // bool פשוט במקום לנחש/להצליב צילומי מסך ידנית.
+  const mismatch = p => (Number((stats[p.id]||{}).games_count) || 0) !== ((attendanceCounts && attendanceCounts[p.id]) || 0);
 
   const q = normName(search);
   let rows = roster.filter(p =>
@@ -2398,6 +2404,7 @@ function StatsTable({ roster, cred, grades }) {
   return (
     <section style={S.card}>
       <h2 style={S.h2}>📊 סטטיסטיקה ({roster.length})</h2>
+      {!loading && (() => { const n = rows.filter(mismatch).length; return n>0 ? <p style={{...S.hint,color:"#dc2626",fontWeight:700,marginTop:4}}>⚠️ {n} שחקנים עם אי-התאמה בין "הגעות" ל"משחקים"</p> : null; })()}
       <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
         <input style={{...S.input,flex:1,minWidth:160}} placeholder="🔍 חיפוש לפי שם…" value={search} onChange={e=>setSearch(e.target.value)} />
         {search && <button className="btn small" onClick={()=>setSearch("")}>נקה ✕</button>}
@@ -2421,6 +2428,7 @@ function StatsTable({ roster, cred, grades }) {
                 <Th col="winrate">אחוז נצחונות</Th>
                 <Th col="wins">נצחונות</Th>
                 <Th col="losses">הפסדים</Th>
+                <Th col="attendance">הגעות</Th>
                 <Th col="status">סטטוס</Th>
               </tr>
             </thead>
@@ -2428,13 +2436,15 @@ function StatsTable({ roster, cred, grades }) {
               {rows.map(p => {
                 const s = stats[p.id] || { wins:0, losses:0 };
                 const winRate = winRateOf(p);
+                const bad = mismatch(p);
                 return (
-                  <tr key={p.id}>
+                  <tr key={p.id} style={bad?{background:"#fef2f2"}:undefined}>
                     <td style={S.statsTd}>{p.name}</td>
                     <td style={S.statsTd}>{grades[p.id] ?? 50}</td>
                     <td style={S.statsTd}>{winRate===null?"—":winRate+"%"}</td>
                     <td style={S.statsTd}>{s.wins||0}</td>
                     <td style={S.statsTd}>{s.losses||0}</td>
+                    <td style={{...S.statsTd,...(bad?{color:"#dc2626",fontWeight:800}:{})}}>{(attendanceCounts && attendanceCounts[p.id]) || 0}{bad?" ⚠️":""}</td>
                     <td style={S.statsTd}><span className={statusClass(p)}>{statusLabel(p)}</span></td>
                   </tr>
                 );

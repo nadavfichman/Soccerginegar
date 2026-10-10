@@ -2409,7 +2409,8 @@ function StatsTable({ roster, cred, grades }) {
       </div>
       {loading && <div style={{...S.subLine,marginTop:10,textAlign:"center"}}>טוען…</div>}
       {!loading && (
-        <div style={S.statsTableWrap}>
+        <div style={S.statsTableWrapX}>
+          <div style={S.statsTableWrapY}>
           <table style={S.statsTable}>
             <thead>
               {/* נתונים קודם, סטטוס (גניגרי/ותיק/רגיל — התג הכי רחב) בסוף —
@@ -2440,6 +2441,7 @@ function StatsTable({ roster, cred, grades }) {
               })}
             </tbody>
           </table>
+          </div>
           {rows.length===0 && <p style={{...S.hint,marginTop:10}}>אין שחקנים תואמים.</p>}
         </div>
       )}
@@ -2949,14 +2951,15 @@ const S = {
   pendActions: { display:"flex", gap:6, flexWrap:"wrap" },
   errorBox: { maxWidth:360, margin:"60px auto", padding:24, background:"#fff", border:"1px solid #e2e8e2", borderRadius:14, textAlign:"center" },
   errorRow: { padding:"8px 10px", borderRadius:8, background:"#fef2f2", border:"1px solid #fecaca", marginBottom:6 },
-  // טאב "📊 סטטיסטיקה" — אין <table> אחר באפליקציה עד כה. עטיפה עם
-  // overflowX:"auto" כדי להישאר שמיש במובייל צר בלי לעצב מחדש לכרטיסים
-  // (לקח מ"עדכון 12" על שורות צפופות מדי בפאנל החלוקה).
-  // גלילה אנכית עצמאית בתוך העטיפה (לא גלילת הדף כולו) — כדי ששורת
-  // הכותרת תוכל להיות position:sticky יחסית לעטיפה הזו בלבד, בלי צורך
-  // לחשב offset משותף עם ה-header/tabSwitcher הדביקים שמעליה (ר' שיחה
-  // עם המשתמש — "שורת כותרת תשאר מקובעת כאשר גולל למטה ולמעלה").
-  statsTableWrap: { overflowX:"auto", overflowY:"auto", maxHeight:"65vh", marginTop:10 },
+  // טאב "📊 סטטיסטיקה" — אין <table> אחר באפליקציה עד כה. שתי עטיפות
+  // מקוננות, כל אחת עם ציר גלילה אחד בלבד — overflowX+overflowY יחד על
+  // אותו אלמנט שוברים לפעמים position:sticky בטבלאות (תקלת-דפדפן ידועה
+  // כששני הצירים גוללים על אותו container). עטיפה חיצונית = אופקי
+  // (לקח מ"עדכון 12" על שורות צפופות מדי בנייד), עטיפה פנימית = אנכי
+  // בלבד — ה-sticky על כל <th> יציב יחסית לעטיפה הפנימית, בלי להתנגש
+  // (ר' שיחה עם המשתמש — "שורת כותרת תשאר מקובעת כאשר גולל").
+  statsTableWrapX: { overflowX:"auto", marginTop:10 },
+  statsTableWrapY: { overflowY:"auto", maxHeight:"65vh" },
   statsTable: { width:"100%", borderCollapse:"collapse", fontSize:13, whiteSpace:"nowrap" },
   statsTh: { textAlign:"right", padding:"8px 10px", borderBottom:"2px solid #e2e8e2", fontWeight:800, color:"#374151", position:"sticky", top:0, background:"#fff", zIndex:1 },
   statsTd: { padding:"8px 10px", borderBottom:"1px solid #eef2ee" },

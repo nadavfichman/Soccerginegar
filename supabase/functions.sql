@@ -442,30 +442,47 @@ end; $$;
 
 grant execute on function get_published_teams_form(text) to anon, authenticated;
 
--- משחק עם תוצאה שמורה נספר ב"מתמיד" (attendanceCounts, index.html) גם
--- בלי נעילת נוכחות (ר' migrations/0024+0025, שיחה עם המשתמש — "אם משחק
--- נכנס להיסטוריה יספר בכמות המשחקים... גם אם לא ננעל"). migrations/0024
--- תנה את זה גם בפרסום הכוחות לשחקנים (teams_published) — תנאי נפרד
--- שהתברר כמבלבל בפועל (המשתמש הזין תוצאה אבל זה לא נספר, כי לא לחץ
--- בנפרד על "פרסם כוחות"); migrations/0025 הסיר את התנאי הזה — תוצאה
--- שמורה + חלוקה שמורה (game_teams) מספיקות, בלי תלות בפעולת UI נפרדת.
--- ציבורי כמו get_published_teams, מאותה סיבה בדיוק — מחושב גם למסך
--- שחקן רגיל, לא רק לאדמין. לא חושף שום דבר חוץ מ-player_id/game_id גולמיים.
--- migrations/0028 הוסיפה UNION עם legacy_player_games (game_id מקודד
--- 'legacy:'||source_game_id) — כדי שתג "הגעות" יתיישר עם "משחקים" במסך
--- מידע שחקן (admin_get_player_stats), שכבר כולל היסטוריה מיובאת.
-create or replace function get_counted_results_players()
-returns table(game_id text, player_id text)
+-- מקור אמת יחיד לכל ספירת משחקי-שחקן באפליקציה (ר' migrations/0031,
+-- שיחה עם המשתמש — "יש רק כמות הגעה אחת נכונה... רוצה בדיקה פנימית
+-- מנגנון שמוודא שתמיד הנתונים יוצאים מאותו מקור"). מחליפה את
+-- get_counted_results_players (בוטלה) — היו שלושה מימושים עצמאיים של
+-- אותה ספירה בדיוק (attendanceCounts בצד לקוח, admin_get_player_stats,
+-- admin_get_all_player_stats) שסטו זה מזה. ציבורי כמו get_published_teams
+-- — attendanceCounts (index.html) נקרא ישירות ממנה, גם למסך שחקן רגיל,
+-- לא רק לאדמין. שלושת המקורות (חי/legacy/נוכחות-נעולה-בלי-תוצאה) לא
+-- חופפים מבנית (union all, לא union) — "legacy:" prefix מונע התנגשות
+-- עם מקור 1, ה-not exists במקור 3 מונע חפיפה עם מקור 1.
+create or replace function get_player_game_log()
+returns table(game_id text, player_id text, outcome text)
 language sql security definer as $$
-  select gt.game_id, gt.player_id
-  from game_results gr
-  join game_teams gt on gt.game_id = gr.game_id
-  union
-  select 'legacy:'||lpg.source_game_id, lpg.player_id
-  from legacy_player_games lpg;
+  select gt.game_id, gt.player_id,
+    case
+      when gt.team = 1 and gr.team1_score > gr.team2_score then 'win'
+      when gt.team = 1 and gr.team1_score < gr.team2_score then 'loss'
+      when gt.team = 1 then 'draw'
+      when gt.team = 2 and gr.team2_score > gr.team1_score then 'win'
+      when gt.team = 2 and gr.team2_score < gr.team1_score then 'loss'
+      else 'draw'
+    end as outcome
+  from game_teams gt
+  join game_results gr on gr.game_id = gt.game_id
+  union all
+  select 'legacy:'||lpg.source_game_id, lpg.player_id, lpg.outcome
+  from legacy_player_games lpg
+  union all
+  select r.game_id, r.player_id, null::text as outcome
+  from registrations r
+  join games g on g.id = r.game_id
+  where r.attended = true
+    and g.attendance_locked = true
+    and not exists (
+      select 1 from game_teams gt2
+      join game_results gr2 on gr2.game_id = gt2.game_id
+      where gt2.game_id = r.game_id and gt2.player_id = r.player_id
+    );
 $$;
 
-grant execute on function get_counted_results_players() to anon, authenticated;
+grant execute on function get_player_game_log() to anon, authenticated;
 
 -- תיעוד תוצאות משחק (ר' migrations/0016) — צעד ראשון לקראת שלב C
 -- (כימיה/אחוזי-ניצחון), לא תלוי בייבוא היסטוריה מ-TeamPicker. דורש
@@ -643,10 +660,8 @@ begin
   group by a.player_id, b.player_id;
 end; $$;
 
--- "מידע על שחקן" (ר' migrations/0022) — נתוני קריירה מצטברים (בלי חלון
--- 50 משחקים כמו admin_get_player_chemistry) לשחקן יחיד: סה"כ משחקים/
--- ניצחונות/הפסדים/תיקו, מ-game_teams+game_results (חי) ו-
--- legacy_player_games (מיובא) יחד.
+-- "מידע על שחקן" (ר' migrations/0022, פושטה ב-0031) — SELECT פשוט
+-- מהמקור הקנוני get_player_game_log(), בלי לשכפל אף לוגיקה.
 create or replace function admin_get_player_stats(input_player_id text, input_pw text, input_phone text, input_pin text)
 returns table(games_count integer, wins integer, losses integer, draws integer)
 language plpgsql security definer as $$
@@ -654,52 +669,19 @@ declare v_role text;
 begin
   v_role := require_admin(input_pw, input_phone, input_pin);
   return query
-    with unified as (
-      select
-        case
-          when gt.team = 1 and gr.team1_score > gr.team2_score then 'win'
-          when gt.team = 1 and gr.team1_score < gr.team2_score then 'loss'
-          when gt.team = 1 then 'draw'
-          when gt.team = 2 and gr.team2_score > gr.team1_score then 'win'
-          when gt.team = 2 and gr.team2_score < gr.team1_score then 'loss'
-          else 'draw'
-        end as outcome
-      from game_teams gt
-      join game_results gr on gr.game_id = gt.game_id
-      where gt.player_id = input_player_id
-      union all
-      select lpg.outcome
-      from legacy_player_games lpg
-      where lpg.player_id = input_player_id
-      -- migrations/0028: משחקים עם נוכחות נעולה שלא עברו דרך חלוקת-כוחות/
-      -- תוצאה בכלל — נספרים ב-games_count בלי תוצאה ידועה (outcome=null),
-      -- כדי להתיישר עם attendanceCounts (תג "הגעות") שכבר סופר אותם.
-      union all
-      select null::text as outcome
-      from registrations r
-      join games g on g.id = r.game_id
-      where r.player_id = input_player_id
-        and r.attended = true
-        and g.attendance_locked = true
-        and not exists (
-          select 1 from game_teams gt2
-          join game_results gr2 on gr2.game_id = gt2.game_id
-          where gt2.game_id = r.game_id and gt2.player_id = r.player_id
-        )
-    )
-  select count(*)::integer as games_count,
-    coalesce(sum((outcome = 'win')::integer), 0)::integer as wins,
-    coalesce(sum((outcome = 'loss')::integer), 0)::integer as losses,
-    coalesce(sum((outcome = 'draw')::integer), 0)::integer as draws
-  from unified;
+    select count(*)::integer as games_count,
+      coalesce(sum((gpl.outcome = 'win')::integer), 0)::integer as wins,
+      coalesce(sum((gpl.outcome = 'loss')::integer), 0)::integer as losses,
+      coalesce(sum((gpl.outcome = 'draw')::integer), 0)::integer as draws
+    from get_player_game_log() gpl
+    where gpl.player_id = input_player_id;
 end; $$;
 
--- "סטטיסטיקה" (ר' migrations/0029, תוקנה ב-0030) — אותה "unified"
--- בדיוק כמו admin_get_player_stats, אבל group by player_id לכל
--- השחקנים בבת אחת (לא N קריאות בלולאה לטבלה עם ~70 שחקנים). מחזירה
--- שורות רק לשחקנים עם לפחות משחק אחד — הלקוח ממלא 0 לשחקנים בלי
--- היסטוריה. alias מפורש ל-CTE (unified u) כדי למנוע עמימות עם
--- משתנה-OUT בשם player_id שה-RETURNS TABLE יוצר (migrations/0030).
+-- "סטטיסטיקה" (ר' migrations/0029, פושטה ב-0031) — אותו SELECT מהמקור
+-- הקנוני, רק group by לכל השחקנים בבת אחת (לא N קריאות בלולאה).
+-- מחזירה שורות רק לשחקנים עם לפחות משחק אחד — הלקוח ממלא 0 לשחקנים
+-- בלי היסטוריה. alias מפורש לפונקציה (gpl) כדי למנוע עמימות עם
+-- משתנה-OUT בשם player_id שה-RETURNS TABLE יוצר (ר' migrations/0030).
 create or replace function admin_get_all_player_stats(input_pw text, input_phone text, input_pin text)
 returns table(player_id text, games_count integer, wins integer, losses integer, draws integer)
 language plpgsql security definer as $$
@@ -707,40 +689,13 @@ declare v_role text;
 begin
   v_role := require_admin(input_pw, input_phone, input_pin);
   return query
-    with unified as (
-      select gt.player_id,
-        case
-          when gt.team = 1 and gr.team1_score > gr.team2_score then 'win'
-          when gt.team = 1 and gr.team1_score < gr.team2_score then 'loss'
-          when gt.team = 1 then 'draw'
-          when gt.team = 2 and gr.team2_score > gr.team1_score then 'win'
-          when gt.team = 2 and gr.team2_score < gr.team1_score then 'loss'
-          else 'draw'
-        end as outcome
-      from game_teams gt
-      join game_results gr on gr.game_id = gt.game_id
-      union all
-      select lpg.player_id, lpg.outcome
-      from legacy_player_games lpg
-      union all
-      select r.player_id, null::text as outcome
-      from registrations r
-      join games g on g.id = r.game_id
-      where r.attended = true
-        and g.attendance_locked = true
-        and not exists (
-          select 1 from game_teams gt2
-          join game_results gr2 on gr2.game_id = gt2.game_id
-          where gt2.game_id = r.game_id and gt2.player_id = r.player_id
-        )
-    )
-  select u.player_id,
-    count(*)::integer as games_count,
-    coalesce(sum((u.outcome = 'win')::integer), 0)::integer as wins,
-    coalesce(sum((u.outcome = 'loss')::integer), 0)::integer as losses,
-    coalesce(sum((u.outcome = 'draw')::integer), 0)::integer as draws
-  from unified u
-  group by u.player_id;
+    select gpl.player_id,
+      count(*)::integer as games_count,
+      coalesce(sum((gpl.outcome = 'win')::integer), 0)::integer as wins,
+      coalesce(sum((gpl.outcome = 'loss')::integer), 0)::integer as losses,
+      coalesce(sum((gpl.outcome = 'draw')::integer), 0)::integer as draws
+    from get_player_game_log() gpl
+    group by gpl.player_id;
 end; $$;
 
 -- הוחלפו (drop + create) כי היו קיימות קודם עם 2 פרמטרים בלבד, בלי אימות הרשאה כלל

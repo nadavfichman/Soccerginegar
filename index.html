@@ -126,7 +126,7 @@ class ErrorBoundary extends React.Component {
 // ==== שכבת גישה לנתונים ====
 const api = {
   async loadAll() {
-    const [players, preqs, admins, areqs, games, regs, declines, resultPlayers] = await Promise.all([
+    const [players, preqs, admins, areqs, games, regs, declines, gameLog] = await Promise.all([
       db.from("players").select("*"),
       db.from("player_requests").select("*"),
       db.from("admins").select("*"),
@@ -134,10 +134,11 @@ const api = {
       db.from("games").select("*"),
       db.from("registrations").select("id, game_id, player_id, ts, attended, guest_name"),
       db.from("game_declines").select("game_id, player_id, ts"),
-      // ר' migrations/0024 — משחקים עם תוצאה שמורה וכוחות מפורסמים נספרים
-      // ב"מתמיד" גם בלי נעילת נוכחות (ציבורי, בלי אישורי אדמין — נדרש גם
-      // למסך שחקן, לא רק לאדמין, ר' attendanceCounts למטה).
-      db.rpc("get_counted_results_players"),
+      // מקור אמת יחיד לספירת משחקי-שחקן (ר' migrations/0031, שיחה עם
+      // המשתמש — "רוצה בדיקה פנימית מנגנון שמוודא שתמיד הנתונים יוצאים
+      // מאותו מקור"). ציבורי, בלי אישורי אדמין — נדרש גם למסך שחקן, לא
+      // רק לאדמין, ר' attendanceCounts למטה.
+      db.rpc("get_player_game_log"),
     ]);
     return {
       roster: players.data || [],
@@ -147,7 +148,7 @@ const api = {
       games: games.data || [],
       regs: regs.data || [],
       declines: declines.data || [],
-      resultPlayers: resultPlayers.data || [],
+      gameLog: gameLog.data || [],
     };
   },
   // בדיקת תפקיד — מוגן, לא חושף שום סוד. אף תפקיד לא ניתן לפי טלפון בלבד.
@@ -235,7 +236,7 @@ function App() {
   const [games, setGames] = useState([]);
   const [regs, setRegs] = useState([]);
   const [declines, setDeclines] = useState([]);
-  const [resultPlayers, setResultPlayers] = useState([]); // {game_id,player_id}[] — ר' migrations/0024
+  const [gameLog, setGameLog] = useState([]); // {game_id,player_id,outcome}[] — מקור אמת יחיד, ר' migrations/0031
 
   // ==== זהות אמיתית של השחקן — Supabase Auth (אימות מייל) ====
   const [session, setSession] = useState(null);
@@ -285,7 +286,7 @@ function App() {
     try {
       const d = await api.loadAll();
       setRoster(d.roster); setPending(d.pending); setAdmins(d.admins);
-      setAdminReqs(d.adminReqs); setGames(d.games); setRegs(d.regs); setDeclines(d.declines); setResultPlayers(d.resultPlayers);
+      setAdminReqs(d.adminReqs); setGames(d.games); setRegs(d.regs); setDeclines(d.declines); setGameLog(d.gameLog);
       setErr("");
     } catch(e){ setErr("בעיה בחיבור לשרת. בדוק חיבור אינטרנט."); console.error(e); }
     setLoaded(true);
@@ -306,28 +307,13 @@ function App() {
     declines: declines.filter(d => d.game_id === g.id).map(d => ({ playerId: d.player_id, ts: d.ts })),
   }));
 
-  // ספירת הגעות מצטברת לכל שחקן — שני מקורות עצמאיים, כל אחד "צורב" משחק
-  // בפני עצמו (לא תלויים זה בזה, אבל עם דה-דופליקציה לפי זוג משחק+שחקן כדי
-  // שמשחק שממלא את שני התנאים לא ייספר פעמיים):
-  // 1. נעילת נוכחות (כברירת המחדל הוותיקה) — registrations.attended=true
-  //    במשחק עם attendance_locked=true. כל עוד משחק פתוח, הסימונים בו
-  //    ניתנים לשינוי חופשי ולא משפיעים על העדיפות; נעילה "צורבת" אותם.
-  // 2. תוצאה שמורה + חלוקה שמורה (ר' שיחה עם המשתמש — "אם משחק נכנס
-  //    להיסטוריה [=הוזנה לו תוצאה], יספר בכמות המשחקים... גם אם לא ננעל")
-  //    — get_counted_results_players (migrations/0024, מתוקן ב-0025 להסיר
-  //    תלות מבלבלת בפרסום הכוחות לשחקנים) מחזיר, לכל משחק עם גם
-  //    game_results וגם game_teams שמורה, את כל מי שהיה בחלוקה.
-  const lockedGameIds = new Set(games.filter(g => g.attendance_locked).map(g => g.id));
+  // ספירת הגעות מצטברת לכל שחקן — נספרת ישירות מ-gameLog, המקור הקנוני
+  // היחיד (ר' migrations/0031, שיחה עם המשתמש — "רוצה בדיקה פנימית
+  // מנגנון שמוודא שתמיד הנתונים יוצאים מאותו מקור"). get_player_game_log
+  // כבר מחזירה כל משחק-ושחקן פעם אחת בלבד (חי+legacy+נוכחות-נעולה-בלי-
+  // תוצאה, בלי חפיפה מבנית) — אין יותר דה-דופליקציה עצמאית בצד הלקוח.
   const attendanceCounts = {};
-  const countedGamePlayer = new Set(); // "gameId|playerId" — מונע ספירה כפולה אם משחק עונה לשני המקורות גם יחד
-  const countAttendance = (gameId, playerId) => {
-    const key = gameId + "|" + playerId;
-    if (countedGamePlayer.has(key)) return;
-    countedGamePlayer.add(key);
-    attendanceCounts[playerId] = (attendanceCounts[playerId]||0) + 1;
-  };
-  regs.forEach(r => { if (r.attended && lockedGameIds.has(r.game_id)) countAttendance(r.game_id, r.player_id); });
-  resultPlayers.forEach(r => countAttendance(r.game_id, r.player_id));
+  gameLog.forEach(r => { attendanceCounts[r.player_id] = (attendanceCounts[r.player_id]||0) + 1; });
 
   if (!loaded || !identityLoaded) return <div style={S.loading}>טוען…</div>;
 
@@ -1023,7 +1009,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
               <AdminRoster {...{ roster, admins, refresh, cred, attendanceCounts, grades, refreshGrades }} />
             </>
           )}
-          {activeTab==="stats" && <StatsTable roster={roster} cred={cred} grades={grades} attendanceCounts={attendanceCounts} />}
+          {activeTab==="stats" && <StatsTable roster={roster} cred={cred} grades={grades} />}
         </>
       ) : (
         <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />
@@ -2329,7 +2315,7 @@ function EditableRow({ i, name, onUp, onDown, onRemove, wait, attended, onToggle
 // migrations/0029) מחזיר סטטיסטיקה לכל השחקנים בבת אחת — לא N קריאות
 // בלולאה. שחקנים בלי שום היסטוריה לא חוזרים מה-RPC בכלל; ברירת מחדל 0
 // (כמו grades[p.id]??50 הקיים) שומרת עליהם ברשימה.
-function StatsTable({ roster, cred, grades, attendanceCounts }) {
+function StatsTable({ roster, cred, grades }) {
   const [stats,setStats] = useState({}); // player_id -> {games_count,wins,losses,draws}
   const [loading,setLoading] = useState(true);
   const [search,setSearch] = useState("");
@@ -2368,14 +2354,8 @@ function StatsTable({ roster, cred, grades, attendanceCounts }) {
     if (col === "winrate") return winRateOf(p);
     if (col === "wins") return Number((stats[p.id]||{}).wins) || 0;
     if (col === "losses") return Number((stats[p.id]||{}).losses) || 0;
-    if (col === "attendance") return (attendanceCounts && attendanceCounts[p.id]) || 0;
     if (col === "status") return rankOf(p);
   };
-  // מנגנון בדיקה (ר' שיחה עם המשתמש — "רוצה שתעשה מנגנון בדיקה שבודק
-  // שהמספרים זהים בכמות משחקים"): attendanceCounts (תג "הגעות") ו-
-  // games_count (RPC, "משחקים") אמורים לפי הקוד להיות זהים לכל שחקן —
-  // bool פשוט במקום לנחש/להצליב צילומי מסך ידנית.
-  const mismatch = p => (Number((stats[p.id]||{}).games_count) || 0) !== ((attendanceCounts && attendanceCounts[p.id]) || 0);
 
   const q = normName(search);
   let rows = roster.filter(p =>
@@ -2404,7 +2384,6 @@ function StatsTable({ roster, cred, grades, attendanceCounts }) {
   return (
     <section style={S.card}>
       <h2 style={S.h2}>📊 סטטיסטיקה ({roster.length})</h2>
-      {!loading && (() => { const n = rows.filter(mismatch).length; return n>0 ? <p style={{...S.hint,color:"#dc2626",fontWeight:700,marginTop:4}}>⚠️ {n} שחקנים עם אי-התאמה בין "הגעות" ל"משחקים"</p> : null; })()}
       <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
         <input style={{...S.input,flex:1,minWidth:160}} placeholder="🔍 חיפוש לפי שם…" value={search} onChange={e=>setSearch(e.target.value)} />
         {search && <button className="btn small" onClick={()=>setSearch("")}>נקה ✕</button>}
@@ -2428,7 +2407,6 @@ function StatsTable({ roster, cred, grades, attendanceCounts }) {
                 <Th col="winrate">אחוז נצחונות</Th>
                 <Th col="wins">נצחונות</Th>
                 <Th col="losses">הפסדים</Th>
-                <Th col="attendance">הגעות</Th>
                 <Th col="status">סטטוס</Th>
               </tr>
             </thead>
@@ -2436,15 +2414,13 @@ function StatsTable({ roster, cred, grades, attendanceCounts }) {
               {rows.map(p => {
                 const s = stats[p.id] || { wins:0, losses:0 };
                 const winRate = winRateOf(p);
-                const bad = mismatch(p);
                 return (
-                  <tr key={p.id} style={bad?{background:"#fef2f2"}:undefined}>
+                  <tr key={p.id}>
                     <td style={S.statsTd}>{p.name}</td>
                     <td style={S.statsTd}>{grades[p.id] ?? 50}</td>
                     <td style={S.statsTd}>{winRate===null?"—":winRate+"%"}</td>
                     <td style={S.statsTd}>{s.wins||0}</td>
                     <td style={S.statsTd}>{s.losses||0}</td>
-                    <td style={{...S.statsTd,...(bad?{color:"#dc2626",fontWeight:800}:{})}}>{(attendanceCounts && attendanceCounts[p.id]) || 0}{bad?" ⚠️":""}</td>
                     <td style={S.statsTd}><span className={statusClass(p)}>{statusLabel(p)}</span></td>
                   </tr>
                 );

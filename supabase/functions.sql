@@ -694,10 +694,12 @@ begin
   from unified;
 end; $$;
 
--- "סטטיסטיקה" (ר' migrations/0029) — אותה "unified" בדיוק כמו
--- admin_get_player_stats, אבל group by player_id לכל השחקנים בבת אחת
--- (לא N קריאות בלולאה לטבלה עם ~70 שחקנים). מחזירה שורות רק לשחקנים
--- עם לפחות משחק אחד — הלקוח ממלא 0 לשחקנים בלי היסטוריה.
+-- "סטטיסטיקה" (ר' migrations/0029, תוקנה ב-0030) — אותה "unified"
+-- בדיוק כמו admin_get_player_stats, אבל group by player_id לכל
+-- השחקנים בבת אחת (לא N קריאות בלולאה לטבלה עם ~70 שחקנים). מחזירה
+-- שורות רק לשחקנים עם לפחות משחק אחד — הלקוח ממלא 0 לשחקנים בלי
+-- היסטוריה. alias מפורש ל-CTE (unified u) כדי למנוע עמימות עם
+-- משתנה-OUT בשם player_id שה-RETURNS TABLE יוצר (migrations/0030).
 create or replace function admin_get_all_player_stats(input_pw text, input_phone text, input_pin text)
 returns table(player_id text, games_count integer, wins integer, losses integer, draws integer)
 language plpgsql security definer as $$
@@ -732,13 +734,13 @@ begin
           where gt2.game_id = r.game_id and gt2.player_id = r.player_id
         )
     )
-  select player_id,
+  select u.player_id,
     count(*)::integer as games_count,
-    coalesce(sum((outcome = 'win')::integer), 0)::integer as wins,
-    coalesce(sum((outcome = 'loss')::integer), 0)::integer as losses,
-    coalesce(sum((outcome = 'draw')::integer), 0)::integer as draws
-  from unified
-  group by player_id;
+    coalesce(sum((u.outcome = 'win')::integer), 0)::integer as wins,
+    coalesce(sum((u.outcome = 'loss')::integer), 0)::integer as losses,
+    coalesce(sum((u.outcome = 'draw')::integer), 0)::integer as draws
+  from unified u
+  group by u.player_id;
 end; $$;
 
 -- הוחלפו (drop + create) כי היו קיימות קודם עם 2 פרמטרים בלבד, בלי אימות הרשאה כלל

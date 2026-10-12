@@ -711,6 +711,28 @@ begin
     group by gc.player_id;
 end; $$;
 
+-- נעילת הרשמה אוטומטית בהגעה ל-22 (ר' migrations/0034, שיחה עם המשתמש
+-- — "חושש שהרשימה תגיע ל-25 ואני בכלל לא עצרתי אותה"). עזר פנימי
+-- משותף לשלושת נתיבי ההוספה ל-registrations (register_for_game,
+-- admin_add_registration, admin_add_guest_registration) — כדי לא
+-- לשכפל את בדיקת הספירה שלוש פעמים. 22 = MAX_PLAYERS (index.html),
+-- מקודד קשיח כאן בכוונה (אין שיתוף קבוע בין JS/SQL). חד-כיווני: רק
+-- סוגר, אף פעם לא פותח אוטומטית — registration_closed הקיים כבר נותן
+-- לאדמין פתיחה ידנית (admin_set_registration_closed, AdminGameRow).
+-- לא משחזר את tierRank/sortRegs (logic.js) — ספירה גולמית שקולה
+-- ל"main מלא" בכל מצב רגיל, בלי לשכפל לוגיקת-עדיפות.
+create or replace function close_registration_if_full(input_game_id text)
+returns void language plpgsql security definer as $$
+declare v_count integer;
+begin
+  select count(*) into v_count from registrations where game_id = input_game_id;
+  if v_count >= 22 then
+    update games set registration_closed = true where id = input_game_id;
+  end if;
+end; $$;
+
+revoke all on function close_registration_if_full(text) from public;
+
 -- הוחלפו (drop + create) כי היו קיימות קודם עם 2 פרמטרים בלבד, בלי אימות הרשאה כלל
 drop function if exists admin_add_registration(text, text);
 create or replace function admin_add_registration(
@@ -720,6 +742,7 @@ declare v_role text;
 begin
   v_role := require_admin(input_pw, input_phone, input_pin);
   insert into registrations (game_id, player_id, ts) values (input_game_id, input_player_id, (extract(epoch from now())*1000)::bigint);
+  perform close_registration_if_full(input_game_id);
   perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_add_registration', jsonb_build_object('game_id', input_game_id, 'player_id', input_player_id));
   return true;
 end; $$;
@@ -757,6 +780,7 @@ begin
   v_guest_id := 'guest_' || replace(gen_random_uuid()::text, '-', '');
   insert into registrations (game_id, player_id, guest_name, ts)
     values (input_game_id, v_guest_id, v_name, (extract(epoch from now())*1000)::bigint);
+  perform close_registration_if_full(input_game_id);
   if input_grade is not null then
     insert into player_grades (player_id, grade) values (v_guest_id, input_grade);
   end if;
@@ -1026,6 +1050,7 @@ begin
   if already_registered then return 'already_registered'; end if;
   delete from game_declines where game_id=input_game_id and player_id=input_player_id;
   insert into registrations (game_id, player_id, ts) values (input_game_id, input_player_id, (extract(epoch from now())*1000)::bigint);
+  perform close_registration_if_full(input_game_id);
   return 'ok';
 end; $$;
 

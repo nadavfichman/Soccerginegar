@@ -227,19 +227,27 @@ end; $$;
 -- ניהול משחקים והרשמות (אדמין או אדמין-על)
 -- visible_to_primary/visible_to_secondary נקבעים ביצירה (ר' migrations/0009) —
 -- קובעים אילו קבוצות שחקנים בכלל רואות את המשחק ברשימה שלהן.
+-- מ-migration 0035: input_opens_at_secondary אופציונלי (ברירת מחדל = זהה
+-- ל-input_opens_at, כלומר בלי הפרדה בין הקבוצות אם לא צויין).
 drop function if exists admin_create_game(bigint, bigint, text, text, text);
+drop function if exists admin_create_game(bigint, bigint, boolean, boolean, text, text, text);
 create or replace function admin_create_game(
   input_kickoff bigint, input_opens_at bigint,
   input_visible_to_primary boolean, input_visible_to_secondary boolean,
-  input_pw text, input_phone text, input_pin text
+  input_pw text, input_phone text, input_pin text,
+  input_opens_at_secondary bigint default null
 ) returns text language plpgsql security definer as $$
-declare v_role text; v_game_id text;
+declare v_role text; v_game_id text; v_opens_secondary bigint;
 begin
   v_role := require_admin(input_pw, input_phone, input_pin);
   v_game_id := 'g'||floor(extract(epoch from now())*1000)::text;
-  insert into games (id, kickoff, opens_at, published, roster_published, visible_to_primary, visible_to_secondary)
-    values (v_game_id, input_kickoff, input_opens_at, false, false, input_visible_to_primary, input_visible_to_secondary);
-  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_create_game', jsonb_build_object('game_id', v_game_id, 'kickoff', input_kickoff, 'opens_at', input_opens_at, 'visible_to_primary', input_visible_to_primary, 'visible_to_secondary', input_visible_to_secondary));
+  v_opens_secondary := coalesce(input_opens_at_secondary, input_opens_at);
+  if v_opens_secondary < input_opens_at then
+    raise exception 'opens_at_secondary_before_primary';
+  end if;
+  insert into games (id, kickoff, opens_at, opens_at_secondary, published, roster_published, visible_to_primary, visible_to_secondary)
+    values (v_game_id, input_kickoff, input_opens_at, v_opens_secondary, false, false, input_visible_to_primary, input_visible_to_secondary);
+  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_create_game', jsonb_build_object('game_id', v_game_id, 'kickoff', input_kickoff, 'opens_at', input_opens_at, 'opens_at_secondary', v_opens_secondary, 'visible_to_primary', input_visible_to_primary, 'visible_to_secondary', input_visible_to_secondary));
   return 'ok';
 end; $$;
 
@@ -1035,9 +1043,11 @@ end; $$;
 -- register_for_game: שחקן נרשם לעצמו למשחק. בודקת בעלות אמיתית
 -- (players.auth_user_id = auth.uid()) לפני ההרשמה. מ-migration 0006: מנקה גם
 -- סימון "לא אגיע" קיים, כדי ששני המצבים יישארו הדדיים (לא ניתן להיות גם וגם).
+-- מ-migration 0035: אכיפה בצד השרת של שעת פתיחה נפרדת לקבוצה ראשית/משנית
+-- (games.opens_at / opens_at_secondary) — לא רק isOpen בצד הלקוח.
 create or replace function register_for_game(input_game_id text, input_player_id text)
 returns text language plpgsql security definer as $$
-declare v_uid uuid; already_registered boolean;
+declare v_uid uuid; already_registered boolean; v_group text; v_opens_at bigint; v_now bigint;
 begin
   v_uid := auth.uid();
   if v_uid is null or not exists (select 1 from players where id=input_player_id and auth_user_id=v_uid) then
@@ -1045,6 +1055,13 @@ begin
   end if;
   if exists (select 1 from games where id = input_game_id and registration_closed) then
     return 'registration_closed';
+  end if;
+  select player_group into v_group from players where id = input_player_id;
+  select (case when v_group = 'secondary' then opens_at_secondary else opens_at end) into v_opens_at
+    from games where id = input_game_id;
+  v_now := (extract(epoch from now())*1000)::bigint;
+  if v_opens_at is not null and v_now < v_opens_at then
+    return 'not_open_yet';
   end if;
   select exists(select 1 from registrations where game_id=input_game_id and player_id=input_player_id) into already_registered;
   if already_registered then return 'already_registered'; end if;

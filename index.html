@@ -302,7 +302,7 @@ function App() {
 
   // בונה מבנה game עם registrations מקוננות (כמו הגרסה הישנה)
   const gamesWithRegs = games.map(g => ({
-    id: g.id, kickoff: g.kickoff, opensAt: g.opens_at,
+    id: g.id, kickoff: g.kickoff, opensAt: g.opens_at, opensAtSecondary: g.opens_at_secondary,
     published: g.published, rosterPublished: g.roster_published, attendanceLocked: !!g.attendance_locked,
     visibleToPrimary: !!g.visible_to_primary, visibleToSecondary: !!g.visible_to_secondary,
     registrationClosed: !!g.registration_closed, teamsPublished: !!g.teams_published,
@@ -452,9 +452,14 @@ function PlayerView({ roster, pending, games, session, identity, now, refresh, l
   //
   // משחק שלא מסומן לקבוצה של השחקן פשוט לא קיים מבחינתו — לא חסימת
   // הרשמה, אלא הסתרה מלאה מהרשימה (כאילו לא נשלחה לו הזמנה בכלל).
+  // שעת פתיחה שונה לכל קבוצה (migrations/0035) — מחליפים את opensAt הגנרי
+  // בשעה הרלוונטית לקבוצה של השחקן הזה *לפני* שמעבירים את המשחק הלאה
+  // ל-CountdownBanner/GameCard, כדי ששניהם ימשיכו לקרוא פשוט game.opensAt
+  // בלי לדעת כלל שיש הפרדה בין קבוצות.
   const visible = games.filter(g => g.published !== false && now < g.kickoff &&
     (me.player_group === "secondary" ? g.visibleToSecondary : g.visibleToPrimary)
-  ).sort((a,b)=>a.kickoff-b.kickoff);
+  ).sort((a,b)=>a.kickoff-b.kickoff)
+   .map(g => ({...g, opensAt: me.player_group === "secondary" ? g.opensAtSecondary : g.opensAt}));
   const nextToOpen = visible.filter(g => now < g.opensAt).sort((a,b)=>a.opensAt-b.opensAt)[0];
   // הבאנר תמיד מוצג מעל הכרטיס הראשון ברשימה — אם המשחק הבא-להיפתח הוא גם
   // המשחק הראשון (אין משחק פתוח שמופיע לפניו), הבאנר צמוד ישירות לכרטיס
@@ -678,6 +683,7 @@ function GameCard({ game, roster, me, now, refresh, attendanceCounts, hideHeader
     const { data, error } = await db.rpc("register_for_game", { input_game_id: game.id, input_player_id: me.id });
     if (error) setRegErr("שגיאה בהרשמה — נסה שוב.");
     else if (data === "not_authorized") setRegErr("לא ניתן לרשום — יש להתחבר מחדש.");
+    else if (data === "not_open_yet") setRegErr("ההרשמה עדיין לא נפתחה.");
     setBusy(false); await refresh();
   };
   const [cancelErr,setCancelErr]=useState("");
@@ -1538,7 +1544,7 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grade
     return () => { alive = false; clearInterval(t); };
   }, [cred.pw, cred.phone, cred.pin]);
   const addGame = async (g) => {
-    await callAdmin("admin_create_game", { input_kickoff: g.kickoff, input_opens_at: g.opensAt, input_visible_to_primary: g.visiblePrimary, input_visible_to_secondary: g.visibleSecondary, input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
+    await callAdmin("admin_create_game", { input_kickoff: g.kickoff, input_opens_at: g.opensAt, input_opens_at_secondary: g.opensAtSecondary, input_visible_to_primary: g.visiblePrimary, input_visible_to_secondary: g.visibleSecondary, input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null });
     setShowNew(false); await refresh();
   };
   const sorted = [...games].sort((a,b)=>a.kickoff-b.kickoff).filter(g => !resultGameIds.has(g.id));
@@ -1659,23 +1665,34 @@ function GameResultsHistory({ cred, roster, games }) {
 
 function NewGameForm({ onAdd }) {
   const [kickoff,setKickoff]=useState(""); const [opensAt,setOpensAt]=useState("");
+  const [opensAtSecondary,setOpensAtSecondary]=useState("");
   const [visPrimary,setVisPrimary]=useState(true); const [visSecondary,setVisSecondary]=useState(false);
   // ברירת מחדל: יומיים לפני המשחק, בשעה 21:00 קבועה — בלי קשר לשעת
   // המשחק עצמו (למשל משחק ביום ב' 20:00 → פתיחה בשבת 21:00; משחק ביום
   // ו' 15:15 → פתיחה ביום ד' 21:00). ר' שיחה עם המשתמש.
   useEffect(()=>{ if(kickoff&&!opensAt){ const d=new Date(kickoff); d.setDate(d.getDate()-2); d.setHours(21,0,0,0); setOpensAt(toLocalInput(d)); } },[kickoff]);
+  // שעת פתיחה נפרדת לקבוצה המשנית (migrations/0035) — ר' שיחה עם המשתמש:
+  // "קודם ירשמו הקבוצה הראשית, ורק אחר כך הקבוצה המשנית". רלוונטי רק אם
+  // המשחק בכלל גלוי לקבוצה המשנית — ברירת מחדל: שעה אחרי הראשית, ניתן לשינוי.
+  useEffect(()=>{ if(visSecondary&&opensAt&&!opensAtSecondary){ const d=new Date(opensAt); d.setHours(d.getHours()+1); setOpensAtSecondary(toLocalInput(d)); } },[visSecondary,opensAt]);
   return (
     <div style={S.formBox}>
       <label style={S.labelSm}>מועד המשחק</label>
       <input style={S.input} type="datetime-local" value={kickoff} onChange={e=>setKickoff(e.target.value)} />
-      <label style={S.labelSm}>פתיחת הרשמה</label>
+      <label style={S.labelSm}>פתיחת הרשמה — קבוצה ראשית</label>
       <input style={S.input} type="datetime-local" value={opensAt} onChange={e=>setOpensAt(e.target.value)} />
       <label style={{...S.labelSm,marginTop:10}}>מי רואה את המשחק</label>
       <div style={S.flagRow}>
         <label style={S.flagLabel}><input type="checkbox" checked={visPrimary} onChange={e=>setVisPrimary(e.target.checked)} /> קבוצה ראשית</label>
         <label style={S.flagLabel}><input type="checkbox" checked={visSecondary} onChange={e=>setVisSecondary(e.target.checked)} /> קבוצה משנית</label>
       </div>
-      <button className="btn primary" style={{marginTop:8}} disabled={!kickoff||!opensAt} onClick={()=>onAdd({kickoff:new Date(kickoff).getTime(),opensAt:new Date(opensAt).getTime(),visiblePrimary:visPrimary,visibleSecondary:visSecondary})}>צור משחק (טיוטה)</button>
+      {visSecondary && (
+        <>
+          <label style={S.labelSm}>פתיחת הרשמה — קבוצה משנית</label>
+          <input style={S.input} type="datetime-local" value={opensAtSecondary} onChange={e=>setOpensAtSecondary(e.target.value)} />
+        </>
+      )}
+      <button className="btn primary" style={{marginTop:8}} disabled={!kickoff||!opensAt||(visSecondary&&!opensAtSecondary)} onClick={()=>onAdd({kickoff:new Date(kickoff).getTime(),opensAt:new Date(opensAt).getTime(),opensAtSecondary:visSecondary?new Date(opensAtSecondary).getTime():null,visiblePrimary:visPrimary,visibleSecondary:visSecondary})}>צור משחק (טיוטה)</button>
     </div>
   );
 }
@@ -2077,7 +2094,9 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   return (
     <div style={S.adminGame}>
       <div style={S.rowBetween}>
-        <div><b>{dayName(game.kickoff)}</b> · {fmtDateTime(game.kickoff)}<div style={S.subLine}>פתיחה: {fmt(game.opensAt)} {isOpen?"· פתוח":"· טרם נפתח"}</div></div>
+        <div><b>{dayName(game.kickoff)}</b> · {fmtDateTime(game.kickoff)}<div style={S.subLine}>פתיחה: {fmt(game.opensAt)} {isOpen?"· פתוח":"· טרם נפתח"}
+          {game.visibleToSecondary && game.opensAtSecondary!==game.opensAt && <> · קבוצה משנית: {fmt(game.opensAtSecondary)}</>}
+        </div></div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
           <span className={game.published?"pill open":"pill closed"}>{game.published?"מפורסם":"טיוטה"}</span>
           <button className={game.published?"btn small":"btn primary small"} onClick={()=>setGameField({published:!game.published})}>{game.published?"בטל פרסום":"פרסם"}</button>

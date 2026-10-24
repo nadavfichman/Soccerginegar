@@ -1880,6 +1880,14 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   // ב-AdminInvites/AdminPinResets) — כל כפתור פותח צ'אט וואטסאפ מוכן מראש
   // עם אותו שחקן, והאדמין לוחץ "שלח" פעם אחת לכל שם. אין דרך לשלוח את כולם
   // בלחיצה אחת אמיתית בלי WhatsApp Business API בתשלום.
+  //
+  // חלופה מהירה יותר (ר' שיחה עם המשתמש): "רשימת תפוצה" של וואטסאפ עצמו
+  // (תכונה פנימית של האפליקציה, לא נגישה דרך wa.me בכלל — האדמין מקים
+  // אותה פעם אחת בוואטסאפ עם חברי הקבוצה המשנית) שולחת לכל נמען בנפרד
+  // (לא קבוצה — כל אחד מקבל צ'אט פרטי, לא רואה מי עוד קיבל). כדי לתמוך
+  // בזה בלי לשכפל טקסט, מוסיפים רק כפתור העתקה לטקסט ההודעה (אותו
+  // buildOpenMsg) — האדמין מדביק אותו ידנית ברשימת התפוצה בתוך וואטסאפ,
+  // במקום/בנוסף ללחיצה אחת-אחת על כל שם.
   const secondaryMembers = roster.filter(p => p.player_group==="secondary" && p.phone);
   // סימון "נשלח" לכל שחקן, לפי משחק — כדי שלא ישלחו בטעות הודעה כפולה
   // לאותו אדם (למשל לחיצה כפולה, או חזרה לרשימה אחרי כמה דקות ושכחה
@@ -1896,6 +1904,16 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
     window.open("https://wa.me/972"+p.phone.replace(/^0/,"")+"?text="+encodeURIComponent(buildOpenMsg()), "_blank");
     try { localStorage.setItem(sentKey(p.id), "1"); } catch {}
     setSentIds(prev => new Set(prev).add(p.id));
+  };
+  // העתקת טקסט ההודעה בלבד (לא פותחת צ'אט) — לשימוש עם "רשימת תפוצה" של
+  // וואטסאפ, אותו דפוס בדיוק כמו copyWaLog (clipboard, עם נפילה חזרה ל-
+  // window.prompt כשאין תמיכה).
+  const [copiedOpenMsg,setCopiedOpenMsg] = useState("");
+  const copyOpenMsg = async () => {
+    const text = buildOpenMsg();
+    try { await navigator.clipboard.writeText(text); setCopiedOpenMsg("הועתק ללוח! ✓"); }
+    catch { window.prompt("העתק ידנית (Ctrl+C):", text); setCopiedOpenMsg(""); }
+    setTimeout(()=>setCopiedOpenMsg(""), 2500);
   };
 
   // פורמט של לוג צ'אט וואטסאפ ([D/M, HH:MM] שם: מגיע) — לא לשליחה, אלא להעתקה
@@ -2254,6 +2272,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
               {secondaryMembers.map(p=>(
                 <button key={p.id} className="btn small" style={{width:"100%",textAlign:"right",opacity:sentIds.has(p.id)?0.6:1}} onClick={()=>sendOpenMsgTo(p)}>{sentIds.has(p.id)?"✓ נשלח ל":"שלח ל"}{p.name} ({p.phone})</button>
               ))}
+              <button className="btn small" style={{width:"100%"}} onClick={copyOpenMsg}>{copiedOpenMsg || "📋 העתק טקסט הודעה (לשליחה דרך רשימת תפוצה)"}</button>
             </div>
           )}
         </div>

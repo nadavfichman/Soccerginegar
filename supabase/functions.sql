@@ -326,6 +326,20 @@ begin
   return true;
 end; $$;
 
+-- cancelled (migrations/0036): משחק שבוטל (מזג"ח, פציעות וכו' — לא קשור
+-- ל-registration_closed/teams_published, לא נוגע בהם) — GameCard מציג
+-- הודעת ביטול בולטת במקום UI ההרשמה הרגיל כשזה true. toggle הפיך
+-- (ביטול-ביטול), אותו דפוס בדיוק כמו admin_set_registration_closed.
+create or replace function admin_set_game_cancelled(input_game_id text, input_value boolean, input_pw text, input_phone text, input_pin text)
+returns boolean language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  update games set cancelled = input_value where id = input_game_id;
+  perform log_admin_action(v_role, coalesce(input_phone,'super'), 'admin_set_game_cancelled', jsonb_build_object('game_id', input_game_id, 'value', input_value));
+  return true;
+end; $$;
+
 create or replace function admin_delete_game(input_game_id text, input_pw text, input_phone text, input_pin text)
 returns boolean language plpgsql security definer as $$
 declare v_role text;

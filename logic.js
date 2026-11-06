@@ -142,13 +142,22 @@
   // מ-50%) וגם לתצוגה לאדמין של "סיכוי הניצחון המשוער" של קבוצה 1 (ר' שיחה
   // עם המשתמש — "להציג סיכוי ניצחון כמו אצל דרור", TeamPrediction.java).
   function computeProbability(chem, players, ids1, ids2) {
-    const g1 = sumGrade(players.filter(p => ids1.includes(p.id)));
-    const g2 = sumGrade(players.filter(p => ids2.includes(p.id)));
+    const team1Players = players.filter(p => ids1.includes(p.id));
+    const team2Players = players.filter(p => ids2.includes(p.id));
+    // ממוצע לשחקן, לא סכום — כשיש מספר אי-זוגי של נרשמים, קבוצה אחת
+    // תמיד מקבלת שחקן עודף (ר' splitTeamsByChemistry, Math.ceil). השחקן
+    // העודף הוא בפועל "עוד מחליף שמסתובב", לא יתרון כוח אמיתי — אבל
+    // השוואת סכום הייתה מטה את gradeAdv לטובת הקבוצה הגדולה יותר רק
+    // בגלל שיש בה עוד גוף, גם כששתי הקבוצות שוות ברמה הממוצעת. ממוצע
+    // מנרמל את זה לגמרי (ר' שיחה עם המשתמש). כימיה/win-rate כבר מחושבים
+    // כאחוזים (rate), לא סכומים — לא מושפעים מהבדל גודל קבוצות.
+    const avg1 = team1Players.length ? sumGrade(team1Players) / team1Players.length : 0;
+    const avg2 = team2Players.length ? sumGrade(team2Players) / team2Players.length : 0;
     // בלי נתונים (0 משחקים רלוונטיים) → ניטרלי 50%, לא 0 — כדי לא להטות
     const c1 = teamChemistry(chem, ids1) || 50, c2 = teamChemistry(chem, ids2) || 50;
     const w1 = teamWinRate(chem, ids1) || 50, w2 = teamWinRate(chem, ids2) || 50;
-    const totalGrade = g1 + g2;
-    const gradeAdv = totalGrade > 0 ? (g1 * 100 / totalGrade - 50) : 0;
+    const totalAvg = avg1 + avg2;
+    const gradeAdv = totalAvg > 0 ? (avg1 * 100 / totalAvg - 50) : 0;
     const weighted = (c1 - c2) * CHEM_WEIGHTS.chemistry + (w1 - w2) * CHEM_WEIGHTS.winRate + gradeAdv * CHEM_WEIGHTS.grade;
     return Math.max(20, Math.min(80, Math.round(50 + weighted)));
   }

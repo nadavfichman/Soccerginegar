@@ -305,7 +305,7 @@ function App() {
     id: g.id, kickoff: g.kickoff, opensAt: g.opens_at, opensAtSecondary: g.opens_at_secondary,
     published: g.published, rosterPublished: g.roster_published, attendanceLocked: !!g.attendance_locked,
     visibleToPrimary: !!g.visible_to_primary, visibleToSecondary: !!g.visible_to_secondary,
-    registrationClosed: !!g.registration_closed, teamsPublished: !!g.teams_published,
+    registrationClosed: !!g.registration_closed, teamsPublished: !!g.teams_published, cancelled: !!g.cancelled,
     registrations: regs.filter(r => r.game_id === g.id).map(r => ({ playerId: r.player_id, ts: r.ts, attended: !!r.attended, guestName: r.guest_name || null })),
     declines: declines.filter(d => d.game_id === g.id).map(d => ({ playerId: d.player_id, ts: d.ts })),
   }));
@@ -668,6 +668,21 @@ function CountdownBanner({ game, now }) {
 function CdUnit({val,label}){ return <div style={S.cdUnit}><div style={S.cdNum}>{val}</div><div style={S.cdLabel}>{label}</div></div>; }
 
 function GameCard({ game, roster, me, now, refresh, attendanceCounts, hideHeader }) {
+  // משחק שבוטל (admin_set_game_cancelled) — מציג רק את הודעת הביטול, בלי
+  // שום UI אחר (הרשמה/רשימה/כוחות) כדי שלא יהיה בלבול עם מצב ישן. לא נוגע
+  // בדגלים אחרים (registration_closed/teams_published) — אם מבטלים את
+  // הביטול, הכול חוזר בדיוק למה שהיה. ר' שיחה עם המשתמש: "לפעמים אין
+  // משחק מכל מיני סיבות למרות שפורסמה רשימת כוחות".
+  if (game.cancelled) {
+    return (
+      <section style={S.gameCard}>
+        <div style={S.cancelledBanner}>
+          <div style={S.cancelledBannerTitle}>❌ המשחק בוטל</div>
+          <div style={S.cancelledBannerSub}>המשחק שתוכנן ל{dayName(game.kickoff)} בשעה {fmtTime(game.kickoff)} לא יתקיים</div>
+        </div>
+      </section>
+    );
+  }
   const isOpen = now >= game.opensAt;
   const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts,guest_name:r.guestName})), roster, attendanceCounts);
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
@@ -1740,6 +1755,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   const [editingKickoff,setEditingKickoff]=useState(false);
   const [newKickoff,setNewKickoff]=useState("");
   const [showSecondarySend,setShowSecondarySend]=useState(false);
+  const [showSecondaryCancelSend,setShowSecondaryCancelSend]=useState(false);
   const [showTeamSplit,setShowTeamSplit]=useState(false);
   const [teamSplit,setTeamSplit]=useState(null); // {team1:[{id,name,grade}], team2:[...]}
   const [teamsLoading,setTeamsLoading]=useState(false);
@@ -1802,6 +1818,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
     if ("visible_to_secondary" in patch) await callAdmin("admin_set_game_visible_secondary", { input_game_id: game.id, input_value: patch.visible_to_secondary, ...credArgs });
     if ("registration_closed" in patch) await callAdmin("admin_set_registration_closed", { input_game_id: game.id, input_value: patch.registration_closed, ...credArgs });
     if ("teams_published" in patch) await callAdmin("admin_set_teams_published", { input_game_id: game.id, input_value: patch.teams_published, ...credArgs });
+    if ("cancelled" in patch) await callAdmin("admin_set_game_cancelled", { input_game_id: game.id, input_value: patch.cancelled, ...credArgs });
     await refresh();
   };
   const removeReg = async (pid, name) => {
@@ -1914,6 +1931,35 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
     try { await navigator.clipboard.writeText(text); setCopiedOpenMsg("הועתק ללוח! ✓"); }
     catch { window.prompt("העתק ידנית (Ctrl+C):", text); setCopiedOpenMsg(""); }
     setTimeout(()=>setCopiedOpenMsg(""), 2500);
+  };
+
+  // הודעת ביטול משחק — אותו דפוס בדיוק כמו buildOpenMsg/shareOpenMsg/
+  // sendOpenMsgTo/copyOpenMsg (קבוצה ראשית: wa.me בלי מספר; קבוצה משנית:
+  // כפתור שליחה בודד לכל שם + כפתור העתקה לרשימת תפוצה), עם מעקב "נשלח"
+  // נפרד (cancelSentKey, לא אותו אחד כמו הודעת פתיחת הרשמה — זו הודעה
+  // שונה לגמרי). מוצג רק כש-game.cancelled (ר' שיחה עם המשתמש: "לפעמים
+  // אין משחק מכל מיני סיבות למרות שפורסמה רשימת כוחות, רוצה אפשרות
+  // להקפיץ הודעה... שיהיה גם אפשרות לשליחה בוואטסאפ").
+  const buildCancelMsg = () => "⚠️ המשחק שנקבע ל"+dayName(game.kickoff)+" בשעה "+fmtTime(game.kickoff)+" לא יתקיים.";
+  const shareCancelMsg = () => window.open("https://wa.me/?text="+encodeURIComponent(buildCancelMsg()), "_blank");
+  const cancelSentKey = (pid) => "waCancelSent_"+game.id+"_"+pid;
+  const [cancelSentIds,setCancelSentIds] = useState(() => {
+    const s = new Set();
+    try { secondaryMembers.forEach(p => { if (localStorage.getItem(cancelSentKey(p.id))) s.add(p.id); }); } catch {}
+    return s;
+  });
+  const sendCancelMsgTo = (p) => {
+    if (cancelSentIds.has(p.id) && !window.confirm("כבר נשלחה הודעת ביטול ל"+p.name+" למשחק הזה. לשלוח שוב?")) return;
+    window.open("https://wa.me/972"+p.phone.replace(/^0/,"")+"?text="+encodeURIComponent(buildCancelMsg()), "_blank");
+    try { localStorage.setItem(cancelSentKey(p.id), "1"); } catch {}
+    setCancelSentIds(prev => new Set(prev).add(p.id));
+  };
+  const [copiedCancelMsg,setCopiedCancelMsg] = useState("");
+  const copyCancelMsg = async () => {
+    const text = buildCancelMsg();
+    try { await navigator.clipboard.writeText(text); setCopiedCancelMsg("הועתק ללוח! ✓"); }
+    catch { window.prompt("העתק ידנית (Ctrl+C):", text); setCopiedCancelMsg(""); }
+    setTimeout(()=>setCopiedCancelMsg(""), 2500);
   };
 
   // פורמט של לוג צ'אט וואטסאפ ([D/M, HH:MM] שם: מגיע) — לא לשליחה, אלא להעתקה
@@ -2138,6 +2184,28 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
         <span style={S.pubText}>{game.registrationClosed?"🔒 ההרשמה סגורה — שחקנים לא יכולים להירשם/לבטל":"ההרשמה פתוחה לשינויים ע\"י שחקנים"}</span>
         <button className={game.registrationClosed?"btn small":"btn danger small"} onClick={()=>setGameField({registration_closed:!game.registrationClosed})}>{game.registrationClosed?"🔓 פתח הרשמה מחדש":"🔒 סגור הרשמה"}</button>
       </div>
+      <div style={game.cancelled?S.pubBarOn:S.pubBar}>
+        <span style={S.pubText}>{game.cancelled?"❌ המשחק סומן כמבוטל — השחקנים רואים הודעת ביטול":"המשחק פעיל"}</span>
+        <button className={game.cancelled?"btn small":"btn danger small"} onClick={()=>{
+          if (game.cancelled) { setGameField({cancelled:false}); return; }
+          if (window.confirm("לבטל את המשחק שנקבע ל"+dayName(game.kickoff)+" בשעה "+fmtTime(game.kickoff)+"? השחקנים יראו הודעת ביטול במקום פרטי ההרשמה.")) setGameField({cancelled:true});
+        }}>{game.cancelled?"↩️ בטל ביטול (שחזר משחק)":"🚫 בטל משחק"}</button>
+      </div>
+      {game.cancelled && (
+        <div style={{marginTop:6}}>
+          <button className="btn waBtn" style={{width:"100%"}} onClick={shareCancelMsg}>📢 הודעת ביטול משחק (קבוצה ראשית)</button>
+          <button className="btn waBtn" style={{width:"100%",marginTop:6}} onClick={()=>setShowSecondaryCancelSend(s=>!s)}>📢 הודעת ביטול משחק (קבוצה משנית) {showSecondaryCancelSend?"▲":"▼"}</button>
+          {showSecondaryCancelSend && (
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:6}}>
+              {secondaryMembers.length===0 && <span style={S.subLine}>אין שחקנים בקבוצה המשנית עם מספר טלפון</span>}
+              {secondaryMembers.map(p=>(
+                <button key={p.id} className="btn small" style={{width:"100%",textAlign:"right",opacity:cancelSentIds.has(p.id)?0.6:1}} onClick={()=>sendCancelMsgTo(p)}>{cancelSentIds.has(p.id)?"✓ נשלח ל":"שלח ל"}{p.name} ({p.phone})</button>
+              ))}
+              <button className="btn small" style={{width:"100%"}} onClick={copyCancelMsg}>{copiedCancelMsg || "📋 העתק טקסט הודעה (לשליחה דרך רשימת תפוצה)"}</button>
+            </div>
+          )}
+        </div>
+      )}
       <button className="btn primary" style={{width:"100%",marginTop:8,padding:12,fontSize:15}} onClick={()=> showTeamSplit ? setShowTeamSplit(false) : openTeamSplit()} disabled={main.length<2}>
         {hasSavedSplit ? "✓ חלוקה שמורה — הצג" : "⚽ הכן כוחות למשחק"} {showTeamSplit?"▲":"▼"}
       </button>
@@ -2909,6 +2977,9 @@ const S = {
   closedBanner: { textAlign:"center", padding:"12px 10px", borderRadius:10, background:"#fee2e2", marginBottom:10, border:"1px solid #fca5a5" },
   closedBannerTitle: { fontWeight:800, fontSize:18, color:"#991b1b" },
   closedBannerSub: { fontWeight:700, fontSize:15, color:"#991b1b", marginTop:4 },
+  cancelledBanner: { textAlign:"center", padding:"14px 10px", borderRadius:10, background:"#991b1b" },
+  cancelledBannerTitle: { fontWeight:800, fontSize:19, color:"#fff" },
+  cancelledBannerSub: { fontWeight:700, fontSize:15, color:"#fee2e2", marginTop:4 },
   liveCountBar: { fontSize:13, fontWeight:600, color:"#166534", background:"#f0fdf4", border:"1px solid #bbf7d0", padding:"8px 10px", borderRadius:8, marginBottom:10, textAlign:"center" },
   regBox: { display:"flex", flexDirection:"column", gap:10, margin:"12px 0" },
   regConfirm: { display:"flex", alignItems:"center", gap:8, fontWeight:800, fontSize:17, color:"#166534", background:"#dcfce7", padding:"12px 14px", borderRadius:10, justifyContent:"center" },

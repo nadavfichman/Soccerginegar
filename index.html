@@ -327,7 +327,7 @@ function App() {
       {view === "player" ? (
         <PlayerView {...{ roster, pending, games: gamesWithRegs, session, identity, now, refresh, loadIdentity, attendanceCounts, authError }} />
       ) : view === "summary" ? (
-        <SummaryEditorView roster={roster} cred={cred} />
+        <SummaryEditorView roster={roster} cred={cred} setView={setView} />
       ) : (
         <AdminView {...{ roster, pending, games: gamesWithRegs, now, role, setRole,
           admins, myPhone, refresh, session, cred, setCred, attendanceCounts, headerH, setView }} />
@@ -446,7 +446,7 @@ async function callSummary(rpcName, args) {
   }
   return { data, error };
 }
-function SummaryEditorView({ roster, cred }) {
+function SummaryEditorView({ roster, cred, setView }) {
   const [pw,setPw] = useState("");
   const [verifiedPw,setVerifiedPw] = useState(null);
   const [loginErr,setLoginErr] = useState("");
@@ -522,6 +522,18 @@ function SummaryEditorView({ roster, cred }) {
     }
     setDraft(prev => ({ ...prev, [team]: prev[team].map(p => p.id===pid ? { ...p, rating: v } : p) }));
   };
+  // כפתורי פלוס/מינוס של חצי נקודה — ר' שיחה עם המשתמש: "לא מספיק נוח
+  // הגלילה... כפתור פלוס ומינוס שפלוס מוסיף חצי ומינוס מוריד חצי."
+  const bumpRating = (team, pid, delta) => {
+    setDraft(prev => ({
+      ...prev,
+      [team]: prev[team].map(p => {
+        if (p.id !== pid) return p;
+        const cur = p.rating === "" || p.rating == null ? 0 : Number(p.rating);
+        return { ...p, rating: String(Math.max(0, Math.min(10, cur + delta))) };
+      }),
+    }));
+  };
 
   const save = async () => {
     if (!draft) return;
@@ -580,10 +592,21 @@ function SummaryEditorView({ roster, cred }) {
   };
   const shareSummaryMsg = () => window.open("https://wa.me/?text="+encodeURIComponent(buildSummaryMsg()), "_blank");
 
+  // כפתור חזרה ברור, בתוך הכרטיס עצמו (לא רק בפוטר הדף שלפעמים צריך
+  // לגלול אליו) — ר' שיחה עם המשתמש: "עדיין אין אפשרות חזרה למסך
+  // שחקן כמו שביקשתי."
+  const backLinks = (
+    <div style={{display:"flex",gap:14,marginBottom:10}}>
+      {cred && <span style={S.footerLink} onClick={()=>setView("admin")}>→ חזרה למסך ניהול</span>}
+      <span style={S.footerLink} onClick={()=>setView("player")}>→ חזרה למסך שחקן</span>
+    </div>
+  );
+
   if (!authed) {
     return (
       <main style={S.main}>
         <section style={S.card}>
+          {backLinks}
           <label style={S.label}>✍️ דף הסיכום של שניידר</label>
           <p style={S.hint}>לאדמין: הסיסמה הרגילה. למי שרק כותב סיכומים (לא אדמין): הקוד הייעודי שניתן לו.</p>
           <input style={S.input} type="password" placeholder="סיסמה / קוד" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} />
@@ -597,6 +620,7 @@ function SummaryEditorView({ roster, cred }) {
   return (
     <main style={S.main}>
       <section style={S.card}>
+        {backLinks}
         <label style={S.label}>✍️ דף הסיכום של שניידר</label>
         <select style={S.input} value={gameId} onChange={e=>openGame(e.target.value)}>
           <option value="">בחר משחק…</option>
@@ -623,9 +647,12 @@ function SummaryEditorView({ roster, cred }) {
                   <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
                     <div style={S.teamPlayerLine1}>
                       <span style={S.teamPlayerName}>{p.name}</span>
-                      <span style={S.ratingBadge}>{p.rating || "—"}</span>
+                      <div style={S.ratingStepper}>
+                        <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)<=0?0.4:1}} onClick={()=>bumpRating("team1",p.id,-0.5)} disabled={Number(p.rating||0)<=0}>−</button>
+                        <span style={S.ratingBadge}>{p.rating || "—"}</span>
+                        <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)>=10?0.4:1}} onClick={()=>bumpRating("team1",p.id,0.5)} disabled={Number(p.rating||0)>=10}>+</button>
+                      </div>
                     </div>
-                    <input type="range" step="0.5" min="0" max="10" style={S.ratingSlider} value={p.rating || 0} onChange={e=>setRating("team1",p.id,e.target.value)} />
                   </div>
                 ))}
               </div>
@@ -634,9 +661,12 @@ function SummaryEditorView({ roster, cred }) {
                   <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
                     <div style={S.teamPlayerLine1}>
                       <span style={S.teamPlayerName}>{p.name}</span>
-                      <span style={S.ratingBadge}>{p.rating || "—"}</span>
+                      <div style={S.ratingStepper}>
+                        <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)<=0?0.4:1}} onClick={()=>bumpRating("team2",p.id,-0.5)} disabled={Number(p.rating||0)<=0}>−</button>
+                        <span style={S.ratingBadge}>{p.rating || "—"}</span>
+                        <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)>=10?0.4:1}} onClick={()=>bumpRating("team2",p.id,0.5)} disabled={Number(p.rating||0)>=10}>+</button>
+                      </div>
                     </div>
-                    <input type="range" step="0.5" min="0" max="10" style={S.ratingSlider} value={p.rating || 0} onChange={e=>setRating("team2",p.id,e.target.value)} />
                   </div>
                 ))}
               </div>
@@ -3430,10 +3460,12 @@ const S = {
   teamPlayerLine1: { display:"flex", alignItems:"center", gap:8 },
   teamPlayerLine2: { display:"flex", alignItems:"center", justifyContent:"space-between", gap:6, opacity:0.85 },
   teamPlayerName: { flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight:700, fontSize:15 },
-  // גלגלת/סקלה לציון שניידר (0 עד 10, חצאים) במקום הקלדת מספר — ר'
-  // שיחה עם המשתמש: "שיגלגלת כזאתי... הרבה יותר מהר מלרשום מספר."
+  // כפתורי פלוס/מינוס (חצי נקודה) לציון שניידר (0 עד 10) במקום הקלדת
+  // מספר או גלילה — ר' שיחה עם המשתמש: "רק צריך לסמן... לא מספיק נוח
+  // הגלילה, כפתור פלוס ומינוס שפלוס מוסיף חצי ומינוס מוריד חצי."
+  ratingStepper: { display:"flex", alignItems:"center", gap:4, flexShrink:0 },
+  ratingStepBtn: { width:26, height:26, borderRadius:6, border:"none", background:"rgba(255,255,255,.25)", color:"#fff", fontSize:16, fontWeight:800, lineHeight:1, cursor:"pointer" },
   ratingBadge: { fontWeight:800, fontSize:15, minWidth:28, textAlign:"center", flexShrink:0 },
-  ratingSlider: { width:"100%", accentColor:"#fff" },
   teamGradeBadge: { display:"inline-flex", alignItems:"center", justifyContent:"center", width:30, height:30, borderRadius:"50%", background:"#5b6b7a", fontSize:13, fontWeight:800, color:"#fff", flexShrink:0 },
   teamIconCluster: { display:"flex", alignItems:"center", gap:6, flexShrink:0 },
   teamRemoveX: { opacity:0.7, fontSize:13, flexShrink:0, padding:"2px 4px", cursor:"pointer" },

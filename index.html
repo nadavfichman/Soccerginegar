@@ -357,7 +357,10 @@ function Header({ view, setView, onHeight }) {
   }, [onHeight]);
 
   const handleBallTap = () => {
-    if (view === "admin") return;
+    // ר' שיחה עם המשתמש: שניידר (דרך דף הסיכום) צריך לראות *רק* את המסך
+    // הזה, שום פרט אחר — אם הקשת-5-על-הלוגו הייתה פעילה גם כאן, היא
+    // הייתה מעבירה אותו למסך כניסת-ניהול (לא נכנס בלעדיך, אבל כן רואה).
+    if (view === "admin" || view === "summary") return;
     tapCount.current += 1;
     if (tapTimer.current) clearTimeout(tapTimer.current);
     tapTimer.current = setTimeout(() => { tapCount.current = 0; }, 2500);

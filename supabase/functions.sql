@@ -1170,17 +1170,19 @@ begin
   raise exception 'not_authorized';
 end; $$;
 
--- 10 המשחקים האחרונים עם תוצאה שמורה — שניידר בוחר רק ממשחקים שבאמת
--- קרו ויש להם ניקוד (לא כל משחק עתידי/בלי תוצאה).
+-- migrations/0038: רשימת משחקים לפי חלוקה שמורה (game_teams), לא לפי
+-- תוצאה רשמית קיימת — ר' שיחה עם המשתמש: "שניידר לפעמים רושם את
+-- הסיכום לפני שאני רושם את התוצאה... לא להסתמך על התוצאה שלי."
+-- התוצאה המוצגת (אם יש) היא זו ששניידר עצמו שמר ב-game_round_summary.
 create or replace function summary_get_recent_games(input_summary_pw text, input_pw text default null, input_phone text default null, input_pin text default null)
 returns table(game_id text, kickoff bigint, team1_score integer, team2_score integer, published boolean)
 language plpgsql security definer as $$
 begin
   perform require_summary_access(input_summary_pw, input_pw, input_phone, input_pin);
   return query
-    select g.id, g.kickoff, gr.team1_score, gr.team2_score, coalesce(grs.published, false)
+    select distinct g.id, g.kickoff, grs.team1_score, grs.team2_score, coalesce(grs.published, false)
     from games g
-    join game_results gr on gr.game_id = g.id
+    join game_teams gt on gt.game_id = g.id
     left join game_round_summary grs on grs.game_id = g.id
     order by g.kickoff desc
     limit 10;
@@ -1189,7 +1191,8 @@ end; $$;
 -- שורה לכל שחקן מהחלוקה לקבוצות שכבר נשמרה (game_teams) — לא מקליד
 -- שמות מחדש. guest_name לתצוגת שם נכונה לאורחים (ר' displayName
 -- הקיים ב-index.html). narrative/published/תוצאה חוזרים זהים בכל
--- שורה — הלקוח קורא מהשורה הראשונה.
+-- שורה — הלקוח קורא מהשורה הראשונה. התוצאה (migrations/0038) מגיעה
+-- מ-game_round_summary (התוצאה של שניידר עצמו), לא מ-game_results.
 create or replace function summary_get_draft(input_summary_pw text, input_game_id text, input_pw text default null, input_phone text default null, input_pin text default null)
 returns table(player_id text, team smallint, guest_name text, rating numeric, narrative text, published boolean, team1_score integer, team2_score integer)
 language plpgsql security definer as $$
@@ -1198,27 +1201,28 @@ begin
   return query
     select gt.player_id, gt.team, reg.guest_name, rt.rating,
       coalesce(grs.narrative, ''), coalesce(grs.published, false),
-      gr.team1_score, gr.team2_score
+      grs.team1_score, grs.team2_score
     from game_teams gt
     left join game_round_summary_ratings rt on rt.game_id = gt.game_id and rt.player_id = gt.player_id
     left join registrations reg on reg.game_id = gt.game_id and reg.player_id = gt.player_id
     left join game_round_summary grs on grs.game_id = gt.game_id
-    left join game_results gr on gr.game_id = gt.game_id
     where gt.game_id = input_game_id;
 end; $$;
 
--- שומר את הטיוטה/פרסום + מחליף לגמרי את כל הציונים לאותו משחק
--- (delete+insert, לא upsert-per-row — פשוט יותר כש"כל הרשימה" נשלחת
--- כל פעם מה-UI, בדיוק כמו admin_set_game_teams). input_ratings:
--- jsonb array [{"player_id":"...","rating":7.5}, ...].
-create or replace function summary_save(input_summary_pw text, input_game_id text, input_narrative text, input_published boolean, input_ratings jsonb, input_pw text default null, input_phone text default null, input_pin text default null)
+-- שומר את הטיוטה/פרסום/תוצאה (migrations/0038: תוצאה משלו, לא
+-- game_results) + מחליף לגמרי את כל הציונים לאותו משחק (delete+insert,
+-- לא upsert-per-row — פשוט יותר כש"כל הרשימה" נשלחת כל פעם מה-UI,
+-- בדיוק כמו admin_set_game_teams). input_ratings: jsonb array
+-- [{"player_id":"...","rating":7.5}, ...].
+create or replace function summary_save(input_summary_pw text, input_game_id text, input_narrative text, input_published boolean, input_ratings jsonb, input_team1_score integer default null, input_team2_score integer default null, input_pw text default null, input_phone text default null, input_pin text default null)
 returns boolean language plpgsql security definer as $$
 declare r jsonb;
 begin
   perform require_summary_access(input_summary_pw, input_pw, input_phone, input_pin);
-  insert into game_round_summary (game_id, narrative, published, updated_at)
-    values (input_game_id, input_narrative, input_published, now())
-    on conflict (game_id) do update set narrative = excluded.narrative, published = excluded.published, updated_at = now();
+  insert into game_round_summary (game_id, narrative, published, team1_score, team2_score, updated_at)
+    values (input_game_id, input_narrative, input_published, input_team1_score, input_team2_score, now())
+    on conflict (game_id) do update set narrative = excluded.narrative, published = excluded.published,
+      team1_score = excluded.team1_score, team2_score = excluded.team2_score, updated_at = now();
   delete from game_round_summary_ratings where game_id = input_game_id;
   for r in select * from jsonb_array_elements(input_ratings) loop
     insert into game_round_summary_ratings (game_id, player_id, rating)
@@ -1241,8 +1245,11 @@ end; $$;
 -- ציבורי לגמרי, בלי סיסמה בכלל — "נראות" לשחקנים נשלטת ע"י published,
 -- אותו דפוס בדיוק כמו get_published_teams/get_published_teams_form.
 -- מחזיר רק את המחזור האחרון שפורסם (לא היסטוריה מלאה — לא התבקש).
+-- migrations/0038: כולל גם team1_score/team2_score (התוצאה של שניידר
+-- עצמו) — דורש drop+create כי שינוי RETURNS TABLE, לא רק body.
+drop function if exists get_round_summary_latest();
 create or replace function get_round_summary_latest()
-returns table(game_id text, kickoff bigint, narrative text, player_id text, team smallint, guest_name text, rating numeric)
+returns table(game_id text, kickoff bigint, narrative text, team1_score integer, team2_score integer, player_id text, team smallint, guest_name text, rating numeric)
 language plpgsql security definer as $$
 declare v_game_id text;
 begin
@@ -1254,7 +1261,8 @@ begin
   limit 1;
   if v_game_id is null then return; end if;
   return query
-    select grs.game_id, g.kickoff, grs.narrative, gt.player_id, gt.team, reg.guest_name, rt.rating
+    select grs.game_id, g.kickoff, grs.narrative, grs.team1_score, grs.team2_score,
+      gt.player_id, gt.team, reg.guest_name, rt.rating
     from game_round_summary grs
     join games g on g.id = grs.game_id
     join game_teams gt on gt.game_id = grs.game_id
@@ -1279,11 +1287,12 @@ declare v_role text;
 begin
   v_role := require_admin(input_pw, input_phone, input_pin);
   return query
-    select grs.game_id, g.kickoff, gr.team1_score, gr.team2_score, grs.narrative, grs.published,
+    -- migrations/0038: התוצאה מגיעה מ-game_round_summary (של שניידר
+    -- עצמו), לא מ-game_results — לכן אין יותר join ל-game_results כאן.
+    select grs.game_id, g.kickoff, grs.team1_score, grs.team2_score, grs.narrative, grs.published,
       gt.player_id, gt.team, reg.guest_name, rt.rating
     from game_round_summary grs
     join games g on g.id = grs.game_id
-    left join game_results gr on gr.game_id = grs.game_id
     join game_teams gt on gt.game_id = grs.game_id
     left join game_round_summary_ratings rt on rt.game_id = grs.game_id and rt.player_id = gt.player_id
     left join registrations reg on reg.game_id = grs.game_id and reg.player_id = gt.player_id

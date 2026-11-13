@@ -507,6 +507,7 @@ function SummaryEditorView({ roster }) {
     const { error } = await callSummary("summary_save", {
       ...credArgs(), input_game_id: gameId,
       input_narrative: draft.narrative, input_published: draft.published, input_ratings: ratings,
+      input_team1_score: draft.team1Score, input_team2_score: draft.team2Score,
     });
     setBusy(false);
     if (error) { setSavedMsg("השמירה נכשלה — נסה שוב."); return; }
@@ -533,11 +534,14 @@ function SummaryEditorView({ roster }) {
   const buildSummaryMsg = () => {
     if (!draft) return "";
     const s1 = draft.team1Score, s2 = draft.team2Score;
-    const winner = s1 > s2 ? "לכחולים" : s2 > s1 ? "לכתומים" : "(תיקו)";
     const headline = draft.kickoff ? ("סיכום משחק יום "+dayName(draft.kickoff)+", "+dateOnly(draft.kickoff)+":") : "סיכום המחזור:";
-    const scoreLine = "תוצאה: "+s1+"-"+s2+" "+winner;
+    let scoreLine = "";
+    if (s1 != null && s2 != null) {
+      const winner = s1 > s2 ? "לכחולים" : s2 > s1 ? "לכתומים" : "(תיקו)";
+      scoreLine = "תוצאה: "+s1+"-"+s2+" "+winner+"\n";
+    }
     const ratingLine = p => p.name+" - "+(p.rating || "—");
-    return headline+"\n"+scoreLine+"\n"+(draft.narrative||"")+"\nציוניים:\nכחולים:\n"+draft.team1.map(ratingLine).join("\n")+"\nכתומים:\n"+draft.team2.map(ratingLine).join("\n");
+    return headline+"\n"+scoreLine+(draft.narrative||"")+"\nציוניים:\nכחולים:\n"+draft.team1.map(ratingLine).join("\n")+"\nכתומים:\n"+draft.team2.map(ratingLine).join("\n");
   };
   const copySummaryMsg = async () => {
     const text = buildSummaryMsg();
@@ -569,13 +573,21 @@ function SummaryEditorView({ roster }) {
           <option value="">בחר משחק…</option>
           {(games||[]).map(g => (
             <option key={g.game_id} value={g.game_id}>
-              {dayName(g.kickoff)} {dateOnly(g.kickoff)} — {g.team1_score}:{g.team2_score} {g.published?"✓ פורסם":"טיוטה"}
+              {dayName(g.kickoff)} {dateOnly(g.kickoff)} {g.team1_score!=null ? ("— "+g.team1_score+":"+g.team2_score+" ") : ""}{g.published?"✓ פורסם":"טיוטה"}
             </option>
           ))}
         </select>
         {busy && !draft && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
         {draft && (
           <>
+            <label style={{...S.labelSm,marginTop:10}}>תוצאה (כמו שאתה יודע אותה — לא תלוי בתוצאה שהאדמין מזין)</label>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <span style={{...S.subLine,color:"#3b82f6",fontWeight:700}}>כחולים</span>
+              <input type="number" min="0" style={{...S.input,width:64,padding:6}} value={draft.team1Score ?? ""} onChange={e=>setDraft(prev=>({...prev,team1Score:e.target.value===""?null:Number(e.target.value)}))} />
+              <span>:</span>
+              <input type="number" min="0" style={{...S.input,width:64,padding:6}} value={draft.team2Score ?? ""} onChange={e=>setDraft(prev=>({...prev,team2Score:e.target.value===""?null:Number(e.target.value)}))} />
+              <span style={{...S.subLine,color:"#f97316",fontWeight:700}}>כתומים</span>
+            </div>
             <div style={{...S.teamSplitCols,marginTop:10}}>
               <div style={{...S.teamCol,background:"#3b82f6"}}>
                 {draft.team1.map(p => (
@@ -634,6 +646,8 @@ function RoundSummaryBanner({ roster }) {
     if (error || !data || data.length===0) { setSummary(false); return; }
     setSummary({
       narrative: data[0].narrative,
+      team1Score: data[0].team1_score,
+      team2Score: data[0].team2_score,
       team1: data.filter(r=>r.team===1).map(r=>({ id:r.player_id, name:displayNm(r.player_id,r.guest_name), rating:r.rating })),
       team2: data.filter(r=>r.team===2).map(r=>({ id:r.player_id, name:displayNm(r.player_id,r.guest_name), rating:r.rating })),
     });
@@ -645,6 +659,7 @@ function RoundSummaryBanner({ roster }) {
       {show && loading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
       {show && summary && (
         <div style={S.teamSplitPanel}>
+          {summary.team1Score!=null && <p style={{fontWeight:800,textAlign:"center",marginBottom:6}}>{summary.team1Score} : {summary.team2Score}</p>}
           {summary.narrative && <p style={{whiteSpace:"pre-wrap",marginBottom:10}}>{summary.narrative}</p>}
           <div style={S.teamSplitCols}>
             <div style={{...S.teamCol,background:"#3b82f6"}}>

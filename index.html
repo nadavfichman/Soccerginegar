@@ -327,15 +327,15 @@ function App() {
       {view === "player" ? (
         <PlayerView {...{ roster, pending, games: gamesWithRegs, session, identity, now, refresh, loadIdentity, attendanceCounts, authError }} />
       ) : view === "summary" ? (
-        <SummaryEditorView roster={roster} />
+        <SummaryEditorView roster={roster} cred={cred} />
       ) : (
         <AdminView {...{ roster, pending, games: gamesWithRegs, now, role, setRole,
-          admins, myPhone, refresh, session, cred, setCred, attendanceCounts, headerH }} />
+          admins, myPhone, refresh, session, cred, setCred, attendanceCounts, headerH, setView }} />
       )}
       <footer style={S.footer}>
         כדורגל גניגרי ושות' · ניהול הרשמה למשחק
         {(view === "player" || view === "admin") && <>{" · "}<span style={S.footerLink} onClick={()=>setView("summary")}>✍️ דף הסיכום של שניידר</span></>}
-        {view === "summary" && <>{" · "}<span style={S.footerLink} onClick={()=>setView("player")}>→ חזרה למסך שחקן</span></>}
+        {view === "summary" && <>{" · "}<span style={S.footerLink} onClick={()=>setView(cred ? "admin" : "player")}>→ {cred ? "חזרה למסך ניהול" : "חזרה למסך שחקן"}</span></>}
       </footer>
     </div>
   );
@@ -445,7 +445,7 @@ async function callSummary(rpcName, args) {
   }
   return { data, error };
 }
-function SummaryEditorView({ roster }) {
+function SummaryEditorView({ roster, cred }) {
   const [pw,setPw] = useState("");
   const [verifiedPw,setVerifiedPw] = useState(null);
   const [loginErr,setLoginErr] = useState("");
@@ -458,9 +458,16 @@ function SummaryEditorView({ roster }) {
 
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
   const displayNm = (id, guestName) => guestName ? (guestName+" (אורח)") : nameOf(id);
-  // נשלחת בכל קריאה כ-input_pw (אישורי אדמין רגילים) וגם כ-input_summary_pw
-  // (קוד שניידר) — השרת מקבל אם אחד מהשניים תקין (require_summary_access).
-  const credArgs = () => ({ input_summary_pw: verifiedPw, input_pw: verifiedPw });
+  // אם הגענו עם cred (כבר מחוברים כאדמין במסך הניהול — למשל מטאב
+  // "סיכומי שניידר") — משתמשים ישר באישורי האדמין הקיימים, בלי לבקש
+  // סיסמה שוב. אחרת (קישור הפוטר בלי חיבור אדמין פעיל, או שניידר עצמו)
+  // נשלחת הסיסמה שהוקשה כ-input_pw (אישורי אדמין רגילים) וגם כ-
+  // input_summary_pw (קוד שניידר) — השרת מקבל אם אחד מהשניים תקין
+  // (require_summary_access).
+  const authed = !!cred || !!verifiedPw;
+  const credArgs = () => cred
+    ? { input_summary_pw: null, input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null }
+    : { input_summary_pw: verifiedPw, input_pw: verifiedPw };
 
   const login = async () => {
     setLoginErr(""); setBusy(true);
@@ -473,6 +480,16 @@ function SummaryEditorView({ roster }) {
     setBusy(false);
     setGames(res.data || []);
   };
+
+  useEffect(() => {
+    if (!cred) return;
+    (async () => {
+      setBusy(true);
+      const res = await callSummary("summary_get_recent_games", credArgs());
+      setBusy(false);
+      setGames(res.data || []);
+    })();
+  }, []);
 
   const openGame = async (gid) => {
     setGameId(gid); setDraft(null); setSavedMsg(""); setCopiedMsg("");
@@ -555,7 +572,7 @@ function SummaryEditorView({ roster }) {
   };
   const shareSummaryMsg = () => window.open("https://wa.me/?text="+encodeURIComponent(buildSummaryMsg()), "_blank");
 
-  if (!verifiedPw) {
+  if (!authed) {
     return (
       <main style={S.main}>
         <section style={S.card}>
@@ -1192,7 +1209,7 @@ function PlayerRosterList({ main, wait, roster, meId }) {
 // ============================================================================
 // צד ניהול
 // ============================================================================
-function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone, refresh, session, cred, setCred, attendanceCounts, headerH }) {
+function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone, refresh, session, cred, setCred, attendanceCounts, headerH, setView }) {
   const [pw,setPw]=useState(""); const [pin,setPin]=useState("");
   const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
   const [hint,setHint]=useState(null); // 'super' | 'admin' | null — רמז בלבד, לא מעניק הרשאה
@@ -1315,7 +1332,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
             </>
           )}
           {activeTab==="stats" && <StatsTable roster={roster} cred={cred} grades={grades} />}
-          {activeTab==="summaries" && <RoundSummaryHistory cred={cred} roster={roster} />}
+          {activeTab==="summaries" && <RoundSummaryHistory cred={cred} roster={roster} setView={setView} />}
         </>
       ) : (
         <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />
@@ -1963,9 +1980,12 @@ function GameResultsHistory({ cred, roster, games }) {
 // טאב אדמין לצפייה בכל סיכומי "דף הסיכום של שניידר" (טיוטות+פרסומים,
 // לא רק האחרון שפורסם כמו RoundSummaryBanner לשחקנים) — ר' שיחה עם
 // המשתמש: "זה מספיק חשוב שיהיה לזה את הגישה שלו, שאני פשוט אסתכל על
-// כל הסיכום הקיים והאחרונים." קריאה בלבד (עריכה עדיין רק דרך "✍️ דף
-// הסיכום של שניידר") — אותו דפוס expandable-row בדיוק כמו GameResultsHistory.
-function RoundSummaryHistory({ cred, roster }) {
+// כל הסיכום הקיים והאחרונים." הרשימה כאן קריאה בלבד, אבל יש כפתור
+// שמעביר ל-SummaryEditorView (אותו מסך בדיוק ששניידר רואה) עם ה-cred
+// הקיים — האדמין יכול למלא/לערוך בעצמו בלי להקיש סיסמה שוב, ל"יום
+// שבו שניידר לא יהיה" (ר' שיחה עם המשתמש). אותו דפוס expandable-row
+// בדיוק כמו GameResultsHistory.
+function RoundSummaryHistory({ cred, roster, setView }) {
   const [loading,setLoading]=useState(true);
   const [rows,setRows]=useState(null); // שורות גולמיות (שחקן אחד לשורה) מה-RPC
   const [expanded,setExpanded]=useState(null);
@@ -1994,6 +2014,8 @@ function RoundSummaryHistory({ cred, roster }) {
   return (
     <section style={S.card}>
       <h2 style={S.h2}>📋 סיכומי שניידר</h2>
+      <p style={S.hint}>לצפייה בלבד. כדי למלא/לערוך סיכום בעצמך — בדיוק כמו שניידר, בלי להקיש סיסמה שוב — תמיד זמין:</p>
+      <button className="btn primary" style={{width:"100%",marginBottom:10}} onClick={()=>setView("summary")}>✍️ מעבר למסך העריכה (כמו שניידר)</button>
       {loading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
       {!loading && games.length === 0 && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>אין עדיין סיכומים</div>}
       {!loading && games.map(g => {

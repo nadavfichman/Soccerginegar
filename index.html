@@ -334,7 +334,7 @@ function App() {
       )}
       <footer style={S.footer}>
         כדורגל גניגרי ושות' · ניהול הרשמה למשחק
-        {view === "player" && <>{" · "}<span style={S.footerLink} onClick={()=>setView("summary")}>✍️ דף סיכום</span></>}
+        {view === "player" && <>{" · "}<span style={S.footerLink} onClick={()=>setView("summary")}>✍️ דף הסיכום של שניידר</span></>}
         {view === "summary" && <>{" · "}<span style={S.footerLink} onClick={()=>setView("player")}>→ חזרה למסך שחקן</span></>}
       </footer>
     </div>
@@ -548,7 +548,7 @@ function SummaryEditorView({ roster }) {
     return (
       <main style={S.main}>
         <section style={S.card}>
-          <label style={S.label}>✍️ דף הסיכום</label>
+          <label style={S.label}>✍️ דף הסיכום של שניידר</label>
           <p style={S.hint}>לאדמין: הסיסמה הרגילה. למי שרק כותב סיכומים (לא אדמין): הקוד הייעודי שניתן לו.</p>
           <input style={S.input} type="password" placeholder="סיסמה / קוד" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} />
           <button className="btn primary" style={{marginTop:10,width:"100%"}} onClick={login} disabled={busy || !pw}>{busy?"בודק…":"כניסה"}</button>
@@ -561,7 +561,7 @@ function SummaryEditorView({ roster }) {
   return (
     <main style={S.main}>
       <section style={S.card}>
-        <label style={S.label}>✍️ דף הסיכום</label>
+        <label style={S.label}>✍️ דף הסיכום של שניידר</label>
         <select style={S.input} value={gameId} onChange={e=>openGame(e.target.value)}>
           <option value="">בחר משחק…</option>
           {(games||[]).map(g => (
@@ -573,8 +573,7 @@ function SummaryEditorView({ roster }) {
         {busy && !draft && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
         {draft && (
           <>
-            <p style={{...S.hint,marginTop:8}}>הציונים האלה לתצוגה/פרסום בלבד — הם לא משפיעים על חלוקת הכוחות.</p>
-            <div style={{...S.teamSplitCols,marginTop:6}}>
+            <div style={{...S.teamSplitCols,marginTop:10}}>
               <div style={{...S.teamCol,background:"#3b82f6"}}>
                 {draft.team1.map(p => (
                   <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>

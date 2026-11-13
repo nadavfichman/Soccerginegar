@@ -1180,7 +1180,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
   // טאב תחתון (ר' שיחה עם המשתמש — בהשראת הניווט של TeamPicker) — רק
   // לאדמין-על, שיש לו גם "משחקים" וגם "שחקנים"; מנהל רגיל רואה רק משחקים,
   // אין טעם בטאבים בשבילו.
-  const [activeTab,setActiveTab]=useState("games"); // "games" | "history" | "players" | "stats"
+  const [activeTab,setActiveTab]=useState("games"); // "games" | "history" | "players" | "stats" | "summaries"
   // דירוגי שחקנים לחלוקת כוחות (ר' migrations/0014) — נשמרים בטבלה נעולה,
   // בלי SELECT ציבורי, נטענים רק כאן דרך RPC אדמין אחרי התחברות מוצלחת.
   const [grades,setGrades]=useState({});
@@ -1280,6 +1280,9 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
           <button style={activeTab==="stats"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("stats")}>
             📊 סטטיסטיקה
           </button>
+          <button style={activeTab==="summaries"?S.tabSwitcherBtnActive:S.tabSwitcherBtn} onClick={()=>setActiveTab("summaries")}>
+            📋 סיכומי שניידר
+          </button>
         </nav>
       )}
       {isSuper ? (
@@ -1293,6 +1296,7 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
             </>
           )}
           {activeTab==="stats" && <StatsTable roster={roster} cred={cred} grades={grades} />}
+          {activeTab==="summaries" && <RoundSummaryHistory cred={cred} roster={roster} />}
         </>
       ) : (
         <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />
@@ -1933,6 +1937,90 @@ function GameResultsHistory({ cred, roster, games }) {
           );
         })
       )}
+    </section>
+  );
+}
+
+// טאב אדמין לצפייה בכל סיכומי "דף הסיכום של שניידר" (טיוטות+פרסומים,
+// לא רק האחרון שפורסם כמו RoundSummaryBanner לשחקנים) — ר' שיחה עם
+// המשתמש: "זה מספיק חשוב שיהיה לזה את הגישה שלו, שאני פשוט אסתכל על
+// כל הסיכום הקיים והאחרונים." קריאה בלבד (עריכה עדיין רק דרך "✍️ דף
+// הסיכום של שניידר") — אותו דפוס expandable-row בדיוק כמו GameResultsHistory.
+function RoundSummaryHistory({ cred, roster }) {
+  const [loading,setLoading]=useState(true);
+  const [rows,setRows]=useState(null); // שורות גולמיות (שחקן אחד לשורה) מה-RPC
+  const [expanded,setExpanded]=useState(null);
+  const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
+  const displayNm = (id, guestName) => guestName ? (guestName+" (אורח)") : nameOf(id);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const credArgs = { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null };
+      const data = await callAdmin("admin_get_round_summaries", credArgs);
+      if (alive) { setRows(data || []); setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, []);
+  const toggleRow = (gid) => setExpanded(prev => prev === gid ? null : gid);
+  const games = [];
+  const seen = new Set();
+  (rows||[]).forEach(r => {
+    if (!seen.has(r.game_id)) {
+      seen.add(r.game_id);
+      games.push({ game_id:r.game_id, kickoff:r.kickoff, team1_score:r.team1_score, team2_score:r.team2_score, narrative:r.narrative, published:r.published });
+    }
+  });
+  games.sort((a,b)=>b.kickoff-a.kickoff);
+  const playersFor = (gid, team) => (rows||[]).filter(r=>r.game_id===gid && r.team===team).map(r=>({ id:r.player_id, name:displayNm(r.player_id, r.guest_name), rating:r.rating }));
+  return (
+    <section style={S.card}>
+      <h2 style={S.h2}>📋 סיכומי שניידר</h2>
+      {loading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
+      {!loading && games.length === 0 && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>אין עדיין סיכומים</div>}
+      {!loading && games.map(g => {
+        const isOpen = expanded === g.game_id;
+        return (
+          <div key={g.game_id} style={{borderBottom:"1px solid #eee"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 4px",cursor:"pointer"}} onClick={()=>toggleRow(g.game_id)}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={S.subLine}>{g.published ? "✓ פורסם" : "טיוטה"}</span>
+                {g.team1_score!=null && <b>{g.team1_score}:{g.team2_score}</b>}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={S.subLine}>{dayName(g.kickoff)} {dateOnly(g.kickoff)}</span>
+                <span style={S.subLine}>{isOpen?"▲":"▼"}</span>
+              </div>
+            </div>
+            {isOpen && (
+              <div style={{padding:"4px 4px 10px"}}>
+                {g.narrative && <p style={{whiteSpace:"pre-wrap",marginBottom:8}}>{g.narrative}</p>}
+                <div style={S.teamSplitCols}>
+                  <div style={{...S.teamCol,background:"#3b82f6"}}>
+                    {playersFor(g.game_id,1).map(p=>(
+                      <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
+                        <div style={S.teamPlayerLine1}>
+                          <span style={S.teamPlayerName}>{p.name}</span>
+                          {p.rating!=null && <span style={S.teamCardBadge}>{p.rating}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{...S.teamCol,background:"#f97316"}}>
+                    {playersFor(g.game_id,2).map(p=>(
+                      <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
+                        <div style={S.teamPlayerLine1}>
+                          <span style={S.teamPlayerName}>{p.name}</span>
+                          {p.rating!=null && <span style={S.teamCardBadge}>{p.rating}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </section>
   );
 }

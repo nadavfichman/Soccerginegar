@@ -172,3 +172,25 @@ begin
     where grs.game_id = v_game_id;
 end; $$;
 grant execute on function get_round_summary_latest() to anon, authenticated;
+
+-- טאב אדמין חדש ("📋 סיכומי שניידר") — רשימת כל המחזורים עם סיכום
+-- (טיוטה או מפורסם, לא רק הפרסום האחרון כמו get_round_summary_latest),
+-- לצפייה בלבד. require_admin רגיל (אותו cred כבר מאומת ב-AdminView),
+-- לא קשור לקוד שניידר/require_summary_access.
+create or replace function admin_get_round_summaries(input_pw text, input_phone text, input_pin text)
+returns table(game_id text, kickoff bigint, team1_score integer, team2_score integer, narrative text, published boolean, player_id text, team smallint, guest_name text, rating numeric)
+language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  return query
+    select grs.game_id, g.kickoff, gr.team1_score, gr.team2_score, grs.narrative, grs.published,
+      gt.player_id, gt.team, reg.guest_name, rt.rating
+    from game_round_summary grs
+    join games g on g.id = grs.game_id
+    left join game_results gr on gr.game_id = grs.game_id
+    join game_teams gt on gt.game_id = grs.game_id
+    left join game_round_summary_ratings rt on rt.game_id = grs.game_id and rt.player_id = gt.player_id
+    left join registrations reg on reg.game_id = grs.game_id and reg.player_id = gt.player_id
+    order by g.kickoff desc;
+end; $$;

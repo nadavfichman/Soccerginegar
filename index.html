@@ -326,11 +326,17 @@ function App() {
       {err && <div style={S.errBar}>{err}</div>}
       {view === "player" ? (
         <PlayerView {...{ roster, pending, games: gamesWithRegs, session, identity, now, refresh, loadIdentity, attendanceCounts, authError }} />
+      ) : view === "summary" ? (
+        <SummaryEditorView roster={roster} />
       ) : (
         <AdminView {...{ roster, pending, games: gamesWithRegs, now, role, setRole,
           admins, myPhone, refresh, session, cred, setCred, attendanceCounts, headerH }} />
       )}
-      <footer style={S.footer}>כדורגל גניגרי ושות' · ניהול הרשמה למשחק</footer>
+      <footer style={S.footer}>
+        כדורגל גניגרי ושות' · ניהול הרשמה למשחק
+        {view === "player" && <>{" · "}<span style={S.footerLink} onClick={()=>setView("summary")}>✍️ דף סיכום</span></>}
+        {view === "summary" && <>{" · "}<span style={S.footerLink} onClick={()=>setView("player")}>→ חזרה למסך שחקן</span></>}
+      </footer>
     </div>
   );
 }
@@ -417,6 +423,230 @@ function InstallButton() {
 }
 
 // ============================================================================
+// "דף הסיכום של שניידר" (migrations/0037) — ציונים 1-10 (עם חצאים) +
+// סיכום מחזור בטקסט חופשי, לפי משחק. שניידר אינו אדמין במערכת (הוחלט
+// במפורש עם המשתמש) — הרשאה נפרדת לגמרי (סיסמת summary_pw, לא קשורה
+// ל-cred של אדמין/אדמין-על). הסיסמה נשמרת רק ב-state מקומי של
+// הקומפוננטה הזו (לא מועלית ל-App כמו cred) — אם שניידר עובר למסך
+// שחקן וחוזר, יזין שוב. מחיר מקובל לפיצ'ר צר-היקף כזה.
+// ============================================================================
+async function callSummary(rpcName, args) {
+  const { data, error } = await db.rpc(rpcName, args);
+  if (error) {
+    console.error(rpcName, error);
+    logClientError(error.message, error.details, "callSummary:" + rpcName);
+  }
+  return { data, error };
+}
+function SummaryEditorView({ roster }) {
+  const [pw,setPw] = useState("");
+  const [verifiedPw,setVerifiedPw] = useState(null);
+  const [loginErr,setLoginErr] = useState("");
+  const [busy,setBusy] = useState(false);
+  const [games,setGames] = useState(null); // [{game_id,kickoff,team1_score,team2_score,published}]
+  const [gameId,setGameId] = useState("");
+  const [draft,setDraft] = useState(null); // {team1:[{id,name,rating}], team2:[...], narrative, published, team1Score, team2Score}
+  const [savedMsg,setSavedMsg] = useState("");
+  const [copiedMsg,setCopiedMsg] = useState("");
+
+  const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
+  const displayNm = (id, guestName) => guestName ? (guestName+" (אורח)") : nameOf(id);
+
+  const login = async () => {
+    setLoginErr(""); setBusy(true);
+    const { data, error } = await callSummary("check_summary_login", { input_pw: pw });
+    setBusy(false);
+    if (error || !data) { setLoginErr("סיסמה שגויה"); return; }
+    setVerifiedPw(pw);
+    setBusy(true);
+    const res = await callSummary("summary_get_recent_games", { input_summary_pw: pw });
+    setBusy(false);
+    setGames(res.data || []);
+  };
+
+  const openGame = async (gid) => {
+    setGameId(gid); setDraft(null); setSavedMsg(""); setCopiedMsg("");
+    if (!gid) return;
+    setBusy(true);
+    const { data } = await callSummary("summary_get_draft", { input_summary_pw: verifiedPw, input_game_id: gid });
+    setBusy(false);
+    const rows = data || [];
+    const toPlayer = r => ({ id: r.player_id, name: displayNm(r.player_id, r.guest_name), rating: r.rating != null ? String(r.rating) : "" });
+    setDraft({
+      team1: rows.filter(r=>r.team===1).map(toPlayer),
+      team2: rows.filter(r=>r.team===2).map(toPlayer),
+      narrative: (rows[0] && rows[0].narrative) || "",
+      published: !!(rows[0] && rows[0].published),
+      team1Score: rows[0] && rows[0].team1_score,
+      team2Score: rows[0] && rows[0].team2_score,
+    });
+  };
+
+  const setRating = (team, pid, val) => {
+    setDraft(prev => ({ ...prev, [team]: prev[team].map(p => p.id===pid ? { ...p, rating: val } : p) }));
+  };
+
+  const save = async () => {
+    if (!draft) return;
+    setBusy(true); setSavedMsg("");
+    const ratings = [...draft.team1, ...draft.team2]
+      .filter(p => p.rating !== "" && p.rating != null)
+      .map(p => ({ player_id: p.id, rating: Number(p.rating) }));
+    const { error } = await callSummary("summary_save", {
+      input_summary_pw: verifiedPw, input_game_id: gameId,
+      input_narrative: draft.narrative, input_published: draft.published, input_ratings: ratings,
+    });
+    setBusy(false);
+    if (error) { setSavedMsg("השמירה נכשלה — נסה שוב."); return; }
+    setSavedMsg("נשמר! ✓");
+    setGames(prev => (prev||[]).map(g => g.game_id===gameId ? { ...g, published: draft.published } : g));
+    setTimeout(()=>setSavedMsg(""), 2500);
+  };
+
+  // בונה את הטקסט בפורמט שהודעת הוואטסאפ של שניידר כבר כתובה בו —
+  // תוצאה + הטקסט החופשי (שכולל בעצמו את "מאכזב"/"מצטיין"/"מהלך
+  // המשחק"/וכו', לא שדות נפרדים) + ציוניים לפי קבוצה.
+  const buildSummaryMsg = () => {
+    if (!draft) return "";
+    const s1 = draft.team1Score, s2 = draft.team2Score;
+    const winner = s1 > s2 ? "לכחולים" : s2 > s1 ? "לכתומים" : "(תיקו)";
+    const scoreLine = "תוצאה: "+s1+"-"+s2+" "+winner;
+    const ratingLine = p => p.name+" - "+(p.rating || "—");
+    return "סיכום המחזור:\n"+scoreLine+"\n"+(draft.narrative||"")+"\nציוניים:\nכחולים:\n"+draft.team1.map(ratingLine).join("\n")+"\nכתומים:\n"+draft.team2.map(ratingLine).join("\n");
+  };
+  const copySummaryMsg = async () => {
+    const text = buildSummaryMsg();
+    try { await navigator.clipboard.writeText(text); setCopiedMsg("הועתק ללוח! ✓"); }
+    catch { window.prompt("העתק ידנית (Ctrl+C):", text); setCopiedMsg(""); }
+    setTimeout(()=>setCopiedMsg(""), 2500);
+  };
+
+  if (!verifiedPw) {
+    return (
+      <main style={S.main}>
+        <section style={S.card}>
+          <label style={S.label}>✍️ דף הסיכום</label>
+          <p style={S.hint}>מיועד למי שכותב את סיכום המחזור. דורש סיסמה ייעודית, לא קשורה לניהול.</p>
+          <input style={S.input} type="password" placeholder="סיסמה" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} />
+          <button className="btn primary" style={{marginTop:10,width:"100%"}} onClick={login} disabled={busy || !pw}>{busy?"בודק…":"כניסה"}</button>
+          {loginErr && <p style={S.errText}>{loginErr}</p>}
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main style={S.main}>
+      <section style={S.card}>
+        <label style={S.label}>✍️ דף הסיכום</label>
+        <select style={S.input} value={gameId} onChange={e=>openGame(e.target.value)}>
+          <option value="">בחר משחק…</option>
+          {(games||[]).map(g => (
+            <option key={g.game_id} value={g.game_id}>
+              {dayName(g.kickoff)} {dateOnly(g.kickoff)} — {g.team1_score}:{g.team2_score} {g.published?"✓ פורסם":"טיוטה"}
+            </option>
+          ))}
+        </select>
+        {busy && !draft && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
+        {draft && (
+          <>
+            <div style={{...S.teamSplitCols,marginTop:10}}>
+              <div style={{...S.teamCol,background:"#3b82f6"}}>
+                {draft.team1.map(p => (
+                  <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
+                    <div style={S.teamPlayerLine1}>
+                      <span style={S.teamPlayerName}>{p.name}</span>
+                      <input type="number" step="0.5" min="1" max="10" style={{...S.input,width:60,padding:6}} value={p.rating} onChange={e=>setRating("team1",p.id,e.target.value)} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{...S.teamCol,background:"#f97316"}}>
+                {draft.team2.map(p => (
+                  <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
+                    <div style={S.teamPlayerLine1}>
+                      <span style={S.teamPlayerName}>{p.name}</span>
+                      <input type="number" step="0.5" min="1" max="10" style={{...S.input,width:60,padding:6}} value={p.rating} onChange={e=>setRating("team2",p.id,e.target.value)} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <label style={{...S.labelSm,marginTop:10}}>סיכום המחזור (טקסט חופשי)</label>
+            <textarea style={{...S.input,minHeight:160,fontFamily:"inherit"}} value={draft.narrative} onChange={e=>setDraft(prev=>({...prev,narrative:e.target.value}))} placeholder="מאכזב / מצטיין / מהלך המשחק / הערות…" />
+            <label style={{...S.flagLabel,marginTop:10,display:"flex"}}>
+              <input type="checkbox" checked={draft.published} onChange={e=>setDraft(prev=>({...prev,published:e.target.checked}))} /> לפרסם לכל השחקנים באפליקציה
+            </label>
+            <button className="btn primary" style={{marginTop:10,width:"100%"}} onClick={save} disabled={busy}>{savedMsg || "💾 שמור"}</button>
+            <button className="btn waBtn" style={{marginTop:8,width:"100%"}} onClick={copySummaryMsg}>{copiedMsg || "📋 העתק טקסט לוואטסאפ"}</button>
+          </>
+        )}
+      </section>
+    </main>
+  );
+}
+
+// מציג לשחקנים את המחזור האחרון שפורסם ב"דף הסיכום של שניידר" —
+// מכווץ כברירת מחדל, לא טוען כלום עד הרחבה ראשונה (אותו דפוס lazy
+// כמו TeamsDisplay/ClientErrorLog). get_round_summary_latest ציבורי
+// לגמרי, בלי סיסמה — "נראות" כבר מסוננת ע"י published בשרת.
+function RoundSummaryBanner({ roster }) {
+  const [show,setShow] = useState(false);
+  const [loading,setLoading] = useState(false);
+  const [summary,setSummary] = useState(null); // null=עוד לא נטען, false=אין מחזור מפורסם
+  const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
+  const displayNm = (id, guestName) => guestName ? (guestName+" (אורח)") : nameOf(id);
+  const toggle = async () => {
+    if (show) { setShow(false); return; }
+    setShow(true);
+    if (summary !== null) return;
+    setLoading(true);
+    const { data, error } = await db.rpc("get_round_summary_latest");
+    setLoading(false);
+    if (error || !data || data.length===0) { setSummary(false); return; }
+    setSummary({
+      narrative: data[0].narrative,
+      team1: data.filter(r=>r.team===1).map(r=>({ id:r.player_id, name:displayNm(r.player_id,r.guest_name), rating:r.rating })),
+      team2: data.filter(r=>r.team===2).map(r=>({ id:r.player_id, name:displayNm(r.player_id,r.guest_name), rating:r.rating })),
+    });
+  };
+  if (summary === false) return null;
+  return (
+    <div style={{marginBottom:10}}>
+      <button className="btn" style={{width:"100%",padding:10,fontSize:14}} onClick={toggle}>📋 סיכום המחזור האחרון {show?"▲":"▼"}</button>
+      {show && loading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
+      {show && summary && (
+        <div style={S.teamSplitPanel}>
+          {summary.narrative && <p style={{whiteSpace:"pre-wrap",marginBottom:10}}>{summary.narrative}</p>}
+          <div style={S.teamSplitCols}>
+            <div style={{...S.teamCol,background:"#3b82f6"}}>
+              {summary.team1.map(p=>(
+                <div key={p.id} style={{...S.teamsDisplayRow,color:"#fff"}}>
+                  <div style={S.teamsDisplayTop}>
+                    <span style={S.teamsDisplayName}>{p.name}</span>
+                    {p.rating!=null && <span style={S.teamCardBadge}>{p.rating}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{...S.teamCol,background:"#f97316"}}>
+              {summary.team2.map(p=>(
+                <div key={p.id} style={{...S.teamsDisplayRow,color:"#fff"}}>
+                  <div style={S.teamsDisplayTop}>
+                    <span style={S.teamsDisplayName}>{p.name}</span>
+                    {p.rating!=null && <span style={S.teamCardBadge}>{p.rating}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // צד שחקן
 // ============================================================================
 function PlayerView({ roster, pending, games, session, identity, now, refresh, loadIdentity, attendanceCounts, authError }) {
@@ -472,6 +702,7 @@ function PlayerView({ roster, pending, games, session, identity, now, refresh, l
       <section style={S.hello}>
         <div style={S.helloName}>שלום, {me.name} 👋</div>
       </section>
+      <RoundSummaryBanner roster={roster} />
       {nextToOpen && <CountdownBanner game={nextToOpen} now={now} />}
       {visible.length===0 && <div style={S.empty}>אין כרגע משחקים מפורסמים.</div>}
       {visible.map(g => <GameCard key={g.id} game={g} roster={roster} me={me} now={now} refresh={refresh} attendanceCounts={attendanceCounts} hideHeader={g.id===bannerAdjacentGameId} />)}
@@ -3000,6 +3231,7 @@ const S = {
   num: { fontWeight:700, color:"#6b7a6b", minWidth:20, fontSize:13 },
   pname: { fontWeight:600 },
   footer: { textAlign:"center", padding:20, color:"#7a897a", fontSize:12 },
+  footerLink: { textDecoration:"underline", cursor:"pointer" },
   h2: { fontSize:17, fontWeight:800, margin:0, color:"#166534", display:"flex", alignItems:"center", gap:8 },
   rowBetween: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 },
   formBox: { background:"#f2f6f0", padding:12, borderRadius:10, marginTop:10 },

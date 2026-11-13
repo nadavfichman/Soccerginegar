@@ -75,3 +75,28 @@ create table if not exists game_declines (
   constraint game_declines_game_id_player_id_key unique (game_id, player_id)
 );
 alter table game_declines enable row level security;
+
+-- "דף הסיכום של שניידר" (migrations/0037) — שניידר אינו אדמין במערכת,
+-- אז ההרשאה נפרדת לגמרי (settings.summary_pw, בדוק דרך check_summary_login
+-- ב-functions.sql), לא require_admin. שתי טבלאות נעולות (בלי policy/grant
+-- select, אותו דפוס כמו player_grades/game_teams/game_results) — גישה
+-- רק דרך ה-RPCs. narrative: טקסט חופשי אחד (לא שדות נפרדים, הוחלט
+-- במפורש עם המשתמש — שניידר לא נצמד לקטגוריות קבועות).
+create table if not exists game_round_summary (
+  game_id text primary key references games(id) on delete cascade,
+  narrative text not null default '',
+  published boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+alter table game_round_summary enable row level security;
+
+-- ציון 1-10 עם חצאים בלבד (rating*2 = floor(rating*2), אכיפה בצד השרת
+-- לא רק step="0.5" ב-UI) לכל שחקן, לפי משחק. player_id חופשי כמו
+-- registrations/game_teams — תומך גם באורחים (guest_<uuid>) בלי שינוי.
+create table if not exists game_round_summary_ratings (
+  game_id text not null references games(id) on delete cascade,
+  player_id text not null,
+  rating numeric(3,1) not null check (rating >= 1 and rating <= 10 and rating*2 = floor(rating*2)),
+  primary key (game_id, player_id)
+);
+alter table game_round_summary_ratings enable row level security;

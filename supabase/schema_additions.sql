@@ -90,13 +90,14 @@ create table if not exists game_round_summary (
 );
 alter table game_round_summary enable row level security;
 
--- ציון 1-10 עם חצאים בלבד (rating*2 = floor(rating*2), אכיפה בצד השרת
--- לא רק step="0.5" ב-UI) לכל שחקן, לפי משחק. player_id חופשי כמו
--- registrations/game_teams — תומך גם באורחים (guest_<uuid>) בלי שינוי.
+-- ציון 0-10 עם חצאים בלבד (rating*2 = floor(rating*2), אכיפה בצד השרת
+-- לא רק step="0.5"/min/max ב-UI) לכל שחקן, לפי משחק. player_id חופשי
+-- כמו registrations/game_teams — תומך גם באורחים (guest_<uuid>) בלי
+-- שינוי. הטווח עודכן מ-1-10 ל-0-10 ב-migrations/0039.
 create table if not exists game_round_summary_ratings (
   game_id text not null references games(id) on delete cascade,
   player_id text not null,
-  rating numeric(3,1) not null check (rating >= 1 and rating <= 10 and rating*2 = floor(rating*2)),
+  rating numeric(3,1) not null check (rating >= 0 and rating <= 10 and rating*2 = floor(rating*2)),
   primary key (game_id, player_id)
 );
 alter table game_round_summary_ratings enable row level security;

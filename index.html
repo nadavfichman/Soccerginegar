@@ -335,7 +335,8 @@ function App() {
       <footer style={S.footer}>
         כדורגל גניגרי ושות' · ניהול הרשמה למשחק
         {(view === "player" || view === "admin") && <>{" · "}<span style={S.footerLink} onClick={()=>setView("summary")}>✍️ דף הסיכום של שניידר</span></>}
-        {view === "summary" && <>{" · "}<span style={S.footerLink} onClick={()=>setView(cred ? "admin" : "player")}>→ {cred ? "חזרה למסך ניהול" : "חזרה למסך שחקן"}</span></>}
+        {view === "summary" && cred && <>{" · "}<span style={S.footerLink} onClick={()=>setView("admin")}>→ חזרה למסך ניהול</span></>}
+        {view === "summary" && <>{" · "}<span style={S.footerLink} onClick={()=>setView("player")}>→ חזרה למסך שחקן</span></>}
       </footer>
     </div>
   );

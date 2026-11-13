@@ -526,22 +526,26 @@ function SummaryEditorView({ roster }) {
     openGame(gameId); // טוען מחדש — אמור לחזור ריק
   };
 
-  // בונה את הטקסט בפורמט שהודעת הוואטסאפ של שניידר כבר כתובה בו —
-  // "סיכום משחק יום <יום> <תאריך>" (ר' שיחה עם המשתמש — חשוב שהתאריך
-  // יופיע, לא רק "סיכום המחזור" סתמי) + תוצאה + הטקסט החופשי (שכולל
-  // בעצמו את "מאכזב"/"מצטיין"/"מהלך המשחק"/וכו', לא שדות נפרדים) +
-  // ציוניים לפי קבוצה.
+  // בונה את הטקסט בפורמט נעים לוואטסאפ — לוגו+שם הקבוצה, "הסיכום של
+  // שניידר", תאריך (ר' שיחה עם המשתמש — חשוב שהתאריך יופיע, לא רק
+  // "סיכום המחזור" סתמי), תוצאה, הטקסט החופשי, ואז ציוניים לפי קבוצה.
+  // וואטסאפ לא תומך בצבעים/גופנים — "עיצוב יפה" כאן אומר *בולד* (כוכביות)
+  // + אימוג'ים עגולים 🔵/🟠 במקום צבע אמיתי, כותרות מודגשות, ורווחים
+  // בין המקטעים כדי שיהיה נעים וקריא.
   const buildSummaryMsg = () => {
     if (!draft) return "";
     const s1 = draft.team1Score, s2 = draft.team2Score;
-    const headline = draft.kickoff ? ("סיכום משחק יום "+dayName(draft.kickoff)+", "+dateOnly(draft.kickoff)+":") : "סיכום המחזור:";
+    const dateLine = draft.kickoff ? ("📅 יום "+dayName(draft.kickoff)+", "+dateOnly(draft.kickoff)) : "";
     let scoreLine = "";
     if (s1 != null && s2 != null) {
-      const winner = s1 > s2 ? "לכחולים" : s2 > s1 ? "לכתומים" : "(תיקו)";
-      scoreLine = "תוצאה: "+s1+"-"+s2+" "+winner+"\n";
+      const winner = s1 > s2 ? "🔵 ניצחון לכחולים" : s2 > s1 ? "🟠 ניצחון לכתומים" : "🤝 תיקו";
+      scoreLine = "\n🔵 *"+s1+"*  -  *"+s2+"* 🟠\n"+winner+"\n";
     }
-    const ratingLine = p => p.name+" - "+(p.rating || "—");
-    return headline+"\n"+scoreLine+(draft.narrative||"")+"\nציוניים:\nכחולים:\n"+draft.team1.map(ratingLine).join("\n")+"\nכתומים:\n"+draft.team2.map(ratingLine).join("\n");
+    const ratingLine = p => "• "+p.name+" — *"+(p.rating || "—")+"*";
+    return "⚽ *כדורגל גניגרי ושות\'*\n📋 *הסיכום של שניידר*\n"+dateLine+"\n"+scoreLine+
+      "\n"+(draft.narrative||"")+
+      "\n\n🔵 *כחולים*\n"+draft.team1.map(ratingLine).join("\n")+
+      "\n\n🟠 *כתומים*\n"+draft.team2.map(ratingLine).join("\n");
   };
   const copySummaryMsg = async () => {
     const text = buildSummaryMsg();

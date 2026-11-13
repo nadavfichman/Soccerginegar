@@ -424,11 +424,15 @@ function InstallButton() {
 
 // ============================================================================
 // "דף הסיכום של שניידר" (migrations/0037) — ציונים 1-10 (עם חצאים) +
-// סיכום מחזור בטקסט חופשי, לפי משחק. שניידר אינו אדמין במערכת (הוחלט
-// במפורש עם המשתמש) — הרשאה נפרדת לגמרי (סיסמת summary_pw, לא קשורה
-// ל-cred של אדמין/אדמין-על). הסיסמה נשמרת רק ב-state מקומי של
-// הקומפוננטה הזו (לא מועלית ל-App כמו cred) — אם שניידר עובר למסך
-// שחקן וחוזר, יזין שוב. מחיר מקובל לפיצ'ר צר-היקף כזה.
+// סיכום מחזור בטקסט חופשי, לפי משחק. נפרד לגמרי מ-players.grade
+// (המשמש לחלוקת כוחות) — לתצוגה/פרסום בלבד, לא משפיע על שום חישוב
+// של איזון הכוחות. שניידר אינו אדמין במערכת — שדה סיסמה אחד שמשמש
+// *גם* לאישורי אדמין רגילים (super) *וגם* לקוד הייעודי של שניידר
+// (check_summary_access מנסה את שניהם בשרת; הלקוח לא צריך לדעת איזה
+// מהם זה) — ר' שיחה עם המשתמש: "אצלי זה עם אותו קוד רגיל, אצלו זה עם
+// קוד מיוחד." הסיסמה נשמרת רק ב-state מקומי (לא מועלית ל-App כמו
+// cred) — אם עוברים למסך שחקן וחוזרים, מזינים שוב. מחיר מקובל
+// לפיצ'ר צר-היקף כזה.
 // ============================================================================
 async function callSummary(rpcName, args) {
   const { data, error } = await db.rpc(rpcName, args);
@@ -445,21 +449,24 @@ function SummaryEditorView({ roster }) {
   const [busy,setBusy] = useState(false);
   const [games,setGames] = useState(null); // [{game_id,kickoff,team1_score,team2_score,published}]
   const [gameId,setGameId] = useState("");
-  const [draft,setDraft] = useState(null); // {team1:[{id,name,rating}], team2:[...], narrative, published, team1Score, team2Score}
+  const [draft,setDraft] = useState(null); // {team1:[{id,name,rating}], team2:[...], narrative, published, team1Score, team2Score, kickoff}
   const [savedMsg,setSavedMsg] = useState("");
   const [copiedMsg,setCopiedMsg] = useState("");
 
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
   const displayNm = (id, guestName) => guestName ? (guestName+" (אורח)") : nameOf(id);
+  // נשלחת בכל קריאה כ-input_pw (אישורי אדמין רגילים) וגם כ-input_summary_pw
+  // (קוד שניידר) — השרת מקבל אם אחד מהשניים תקין (require_summary_access).
+  const credArgs = () => ({ input_summary_pw: verifiedPw, input_pw: verifiedPw });
 
   const login = async () => {
     setLoginErr(""); setBusy(true);
-    const { data, error } = await callSummary("check_summary_login", { input_pw: pw });
+    const { data, error } = await callSummary("check_summary_access", { input_summary_pw: pw, input_pw: pw });
     setBusy(false);
     if (error || !data) { setLoginErr("סיסמה שגויה"); return; }
     setVerifiedPw(pw);
     setBusy(true);
-    const res = await callSummary("summary_get_recent_games", { input_summary_pw: pw });
+    const res = await callSummary("summary_get_recent_games", { input_summary_pw: pw, input_pw: pw });
     setBusy(false);
     setGames(res.data || []);
   };
@@ -468,9 +475,10 @@ function SummaryEditorView({ roster }) {
     setGameId(gid); setDraft(null); setSavedMsg(""); setCopiedMsg("");
     if (!gid) return;
     setBusy(true);
-    const { data } = await callSummary("summary_get_draft", { input_summary_pw: verifiedPw, input_game_id: gid });
+    const { data } = await callSummary("summary_get_draft", { ...credArgs(), input_game_id: gid });
     setBusy(false);
     const rows = data || [];
+    const g = (games||[]).find(x=>x.game_id===gid);
     const toPlayer = r => ({ id: r.player_id, name: displayNm(r.player_id, r.guest_name), rating: r.rating != null ? String(r.rating) : "" });
     setDraft({
       team1: rows.filter(r=>r.team===1).map(toPlayer),
@@ -479,6 +487,7 @@ function SummaryEditorView({ roster }) {
       published: !!(rows[0] && rows[0].published),
       team1Score: rows[0] && rows[0].team1_score,
       team2Score: rows[0] && rows[0].team2_score,
+      kickoff: g && g.kickoff,
     });
   };
 
@@ -493,7 +502,7 @@ function SummaryEditorView({ roster }) {
       .filter(p => p.rating !== "" && p.rating != null)
       .map(p => ({ player_id: p.id, rating: Number(p.rating) }));
     const { error } = await callSummary("summary_save", {
-      input_summary_pw: verifiedPw, input_game_id: gameId,
+      ...credArgs(), input_game_id: gameId,
       input_narrative: draft.narrative, input_published: draft.published, input_ratings: ratings,
     });
     setBusy(false);
@@ -503,16 +512,29 @@ function SummaryEditorView({ roster }) {
     setTimeout(()=>setSavedMsg(""), 2500);
   };
 
+  const delSummary = async () => {
+    if (!draft || !window.confirm("למחוק לגמרי את הסיכום (ציונים+טקסט) של המשחק הזה?")) return;
+    setBusy(true);
+    const { error } = await callSummary("summary_delete", { ...credArgs(), input_game_id: gameId });
+    setBusy(false);
+    if (error) { window.alert("המחיקה נכשלה — נסה שוב."); return; }
+    setGames(prev => (prev||[]).map(g => g.game_id===gameId ? { ...g, published: false } : g));
+    openGame(gameId); // טוען מחדש — אמור לחזור ריק
+  };
+
   // בונה את הטקסט בפורמט שהודעת הוואטסאפ של שניידר כבר כתובה בו —
-  // תוצאה + הטקסט החופשי (שכולל בעצמו את "מאכזב"/"מצטיין"/"מהלך
-  // המשחק"/וכו', לא שדות נפרדים) + ציוניים לפי קבוצה.
+  // "סיכום משחק יום <יום> <תאריך>" (ר' שיחה עם המשתמש — חשוב שהתאריך
+  // יופיע, לא רק "סיכום המחזור" סתמי) + תוצאה + הטקסט החופשי (שכולל
+  // בעצמו את "מאכזב"/"מצטיין"/"מהלך המשחק"/וכו', לא שדות נפרדים) +
+  // ציוניים לפי קבוצה.
   const buildSummaryMsg = () => {
     if (!draft) return "";
     const s1 = draft.team1Score, s2 = draft.team2Score;
     const winner = s1 > s2 ? "לכחולים" : s2 > s1 ? "לכתומים" : "(תיקו)";
+    const headline = draft.kickoff ? ("סיכום משחק יום "+dayName(draft.kickoff)+", "+dateOnly(draft.kickoff)+":") : "סיכום המחזור:";
     const scoreLine = "תוצאה: "+s1+"-"+s2+" "+winner;
     const ratingLine = p => p.name+" - "+(p.rating || "—");
-    return "סיכום המחזור:\n"+scoreLine+"\n"+(draft.narrative||"")+"\nציוניים:\nכחולים:\n"+draft.team1.map(ratingLine).join("\n")+"\nכתומים:\n"+draft.team2.map(ratingLine).join("\n");
+    return headline+"\n"+scoreLine+"\n"+(draft.narrative||"")+"\nציוניים:\nכחולים:\n"+draft.team1.map(ratingLine).join("\n")+"\nכתומים:\n"+draft.team2.map(ratingLine).join("\n");
   };
   const copySummaryMsg = async () => {
     const text = buildSummaryMsg();
@@ -520,14 +542,15 @@ function SummaryEditorView({ roster }) {
     catch { window.prompt("העתק ידנית (Ctrl+C):", text); setCopiedMsg(""); }
     setTimeout(()=>setCopiedMsg(""), 2500);
   };
+  const shareSummaryMsg = () => window.open("https://wa.me/?text="+encodeURIComponent(buildSummaryMsg()), "_blank");
 
   if (!verifiedPw) {
     return (
       <main style={S.main}>
         <section style={S.card}>
           <label style={S.label}>✍️ דף הסיכום</label>
-          <p style={S.hint}>מיועד למי שכותב את סיכום המחזור. דורש סיסמה ייעודית, לא קשורה לניהול.</p>
-          <input style={S.input} type="password" placeholder="סיסמה" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} />
+          <p style={S.hint}>לאדמין: הסיסמה הרגילה. למי שרק כותב סיכומים (לא אדמין): הקוד הייעודי שניתן לו.</p>
+          <input style={S.input} type="password" placeholder="סיסמה / קוד" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} />
           <button className="btn primary" style={{marginTop:10,width:"100%"}} onClick={login} disabled={busy || !pw}>{busy?"בודק…":"כניסה"}</button>
           {loginErr && <p style={S.errText}>{loginErr}</p>}
         </section>
@@ -550,7 +573,8 @@ function SummaryEditorView({ roster }) {
         {busy && !draft && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
         {draft && (
           <>
-            <div style={{...S.teamSplitCols,marginTop:10}}>
+            <p style={{...S.hint,marginTop:8}}>הציונים האלה לתצוגה/פרסום בלבד — הם לא משפיעים על חלוקת הכוחות.</p>
+            <div style={{...S.teamSplitCols,marginTop:6}}>
               <div style={{...S.teamCol,background:"#3b82f6"}}>
                 {draft.team1.map(p => (
                   <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
@@ -578,7 +602,9 @@ function SummaryEditorView({ roster }) {
               <input type="checkbox" checked={draft.published} onChange={e=>setDraft(prev=>({...prev,published:e.target.checked}))} /> לפרסם לכל השחקנים באפליקציה
             </label>
             <button className="btn primary" style={{marginTop:10,width:"100%"}} onClick={save} disabled={busy}>{savedMsg || "💾 שמור"}</button>
-            <button className="btn waBtn" style={{marginTop:8,width:"100%"}} onClick={copySummaryMsg}>{copiedMsg || "📋 העתק טקסט לוואטסאפ"}</button>
+            <button className="btn waBtn" style={{marginTop:8,width:"100%"}} onClick={shareSummaryMsg}>📤 שתף לוואטסאפ</button>
+            <button className="btn small" style={{marginTop:6,width:"100%"}} onClick={copySummaryMsg}>{copiedMsg || "📋 העתק טקסט בלבד"}</button>
+            <button className="btn danger small" style={{marginTop:10,width:"100%"}} onClick={delSummary} disabled={busy}>🗑️ מחק סיכום</button>
           </>
         )}
       </section>

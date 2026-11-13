@@ -1113,16 +1113,19 @@ end; $$;
 
 -- ============================================================================
 -- "דף הסיכום של שניידר" (migrations/0037) — ציונים 1-10 (עם חצאים) +
--- סיכום מחזור בטקסט חופשי, לפי משחק. שניידר אינו אדמין במערכת (הוחלט
--- במפורש עם המשתמש) — הרשאה נפרדת לגמרי דרך settings.summary_pw, לא
--- require_admin/PIN-מנהל. כל ה-RPCs כאן בודקים check_summary_login
--- בעצמם, לא קשורים למודל ההרשאות הקיים (שחקן/מנהל/אדמין-על).
+-- סיכום מחזור בטקסט חופשי, לפי משחק. נפרד לגמרי מ-players.grade
+-- (המשמש לחלוקת כוחות) — לתצוגה/פרסום בלבד, לא משפיע על שום חישוב.
+-- שניידר אינו אדמין במערכת — require_summary_access מקבל *או* אישורי
+-- אדמין רגילים (super/PIN) *או* קוד שניידר הייעודי, לא קשור למודל
+-- ההרשאות הקיים. כך גם המשתמש (אדמין-על) יכול להגיע לאותו מסך בדיוק
+-- עם האישורים הרגילים שלו, בלי לדעת את קוד שניידר.
 -- ============================================================================
 
 create or replace function check_summary_login(input_pw text)
 returns boolean language plpgsql security definer as $$
 declare s record;
 begin
+  if input_pw is null then return false; end if;
   select summary_pw into s from settings where id = 1;
   if s.summary_pw is null then return false; end if;
   return crypt(input_pw, s.summary_pw) = s.summary_pw;
@@ -1140,13 +1143,40 @@ begin
   return true;
 end; $$;
 
+-- בדיקה ציבורית נקייה (בלי raise) למסך הכניסה בלבד — מנסה קודם את
+-- check_login הרגיל (סיסמת אדמין-על/PIN מנהל) ואם לא, את קוד שניידר.
+-- check_login(null,null,null) חסר-תופעות-לוואי (לא רושם ניסיון כושל),
+-- אז שניידר שלא שולח input_pw בכלל לא "נתקע" בלוגיקת הנעילה של אדמין.
+create or replace function check_summary_access(input_summary_pw text, input_pw text)
+returns boolean language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := check_login(input_pw, null, null);
+  if v_role is not null and v_role <> 'locked' then return true; end if;
+  return check_summary_login(input_summary_pw);
+end; $$;
+
+-- עזר פנימי (לא נקרא ישירות מהלקוח) לשאר ה-RPCs של דף הסיכום — מקבל
+-- אם האישורים הרגילים (אדמין-על/מנהל) תקינים, או אם קוד שניידר תקין.
+-- raise בכישלון, אותו עיקרון כמו require_admin.
+create or replace function require_summary_access(input_summary_pw text, input_pw text, input_phone text, input_pin text)
+returns text language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := check_login(input_pw, input_phone, input_pin);
+  if v_role = 'locked' then raise exception 'locked'; end if;
+  if v_role is not null then return v_role; end if;
+  if check_summary_login(input_summary_pw) then return 'schneider'; end if;
+  raise exception 'not_authorized';
+end; $$;
+
 -- 10 המשחקים האחרונים עם תוצאה שמורה — שניידר בוחר רק ממשחקים שבאמת
 -- קרו ויש להם ניקוד (לא כל משחק עתידי/בלי תוצאה).
-create or replace function summary_get_recent_games(input_summary_pw text)
+create or replace function summary_get_recent_games(input_summary_pw text, input_pw text default null, input_phone text default null, input_pin text default null)
 returns table(game_id text, kickoff bigint, team1_score integer, team2_score integer, published boolean)
 language plpgsql security definer as $$
 begin
-  if not check_summary_login(input_summary_pw) then raise exception 'invalid_summary_password'; end if;
+  perform require_summary_access(input_summary_pw, input_pw, input_phone, input_pin);
   return query
     select g.id, g.kickoff, gr.team1_score, gr.team2_score, coalesce(grs.published, false)
     from games g
@@ -1160,11 +1190,11 @@ end; $$;
 -- שמות מחדש. guest_name לתצוגת שם נכונה לאורחים (ר' displayName
 -- הקיים ב-index.html). narrative/published/תוצאה חוזרים זהים בכל
 -- שורה — הלקוח קורא מהשורה הראשונה.
-create or replace function summary_get_draft(input_summary_pw text, input_game_id text)
+create or replace function summary_get_draft(input_summary_pw text, input_game_id text, input_pw text default null, input_phone text default null, input_pin text default null)
 returns table(player_id text, team smallint, guest_name text, rating numeric, narrative text, published boolean, team1_score integer, team2_score integer)
 language plpgsql security definer as $$
 begin
-  if not check_summary_login(input_summary_pw) then raise exception 'invalid_summary_password'; end if;
+  perform require_summary_access(input_summary_pw, input_pw, input_phone, input_pin);
   return query
     select gt.player_id, gt.team, reg.guest_name, rt.rating,
       coalesce(grs.narrative, ''), coalesce(grs.published, false),
@@ -1181,11 +1211,11 @@ end; $$;
 -- (delete+insert, לא upsert-per-row — פשוט יותר כש"כל הרשימה" נשלחת
 -- כל פעם מה-UI, בדיוק כמו admin_set_game_teams). input_ratings:
 -- jsonb array [{"player_id":"...","rating":7.5}, ...].
-create or replace function summary_save(input_summary_pw text, input_game_id text, input_narrative text, input_published boolean, input_ratings jsonb)
+create or replace function summary_save(input_summary_pw text, input_game_id text, input_narrative text, input_published boolean, input_ratings jsonb, input_pw text default null, input_phone text default null, input_pin text default null)
 returns boolean language plpgsql security definer as $$
 declare r jsonb;
 begin
-  if not check_summary_login(input_summary_pw) then raise exception 'invalid_summary_password'; end if;
+  perform require_summary_access(input_summary_pw, input_pw, input_phone, input_pin);
   insert into game_round_summary (game_id, narrative, published, updated_at)
     values (input_game_id, input_narrative, input_published, now())
     on conflict (game_id) do update set narrative = excluded.narrative, published = excluded.published, updated_at = now();
@@ -1194,6 +1224,17 @@ begin
     insert into game_round_summary_ratings (game_id, player_id, rating)
       values (input_game_id, r->>'player_id', (r->>'rating')::numeric);
   end loop;
+  return true;
+end; $$;
+
+-- מחיקה מלאה של סיכום קיים (לא רק "שמור ריק") — מסיר גם את הטיוטה/
+-- פרסום וגם את כל הציונים לאותו משחק.
+create or replace function summary_delete(input_summary_pw text, input_game_id text, input_pw text default null, input_phone text default null, input_pin text default null)
+returns boolean language plpgsql security definer as $$
+begin
+  perform require_summary_access(input_summary_pw, input_pw, input_phone, input_pin);
+  delete from game_round_summary_ratings where game_id = input_game_id;
+  delete from game_round_summary where game_id = input_game_id;
   return true;
 end; $$;
 
@@ -1223,6 +1264,8 @@ begin
 end; $$;
 
 grant execute on function check_summary_login(text) to anon, authenticated;
+grant execute on function check_summary_access(text, text) to anon, authenticated;
+revoke all on function require_summary_access(text, text, text, text) from public;
 grant execute on function get_round_summary_latest() to anon, authenticated;
 
 -- הפונקציות הבאות קיימות במערכת אך הגוף שלהן לא תועד כאן (לא הוצג לנו

@@ -647,11 +647,11 @@ function SummaryEditorView({ roster, cred, setView }) {
                   <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
                     <div style={S.teamPlayerLine1}>
                       <span style={S.teamPlayerName}>{p.name}</span>
-                      <div style={S.ratingStepper}>
-                        <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)<=0?0.4:1}} onClick={()=>bumpRating("team1",p.id,-0.5)} disabled={Number(p.rating||0)<=0}>−</button>
-                        <span style={S.ratingBadge}>{p.rating || "—"}</span>
-                        <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)>=10?0.4:1}} onClick={()=>bumpRating("team1",p.id,0.5)} disabled={Number(p.rating||0)>=10}>+</button>
-                      </div>
+                    </div>
+                    <div style={{...S.ratingStepper,justifyContent:"center"}}>
+                      <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)<=0?0.4:1}} onClick={()=>bumpRating("team1",p.id,-0.5)} disabled={Number(p.rating||0)<=0}>−</button>
+                      <span style={S.ratingBadge}>{p.rating || "—"}</span>
+                      <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)>=10?0.4:1}} onClick={()=>bumpRating("team1",p.id,0.5)} disabled={Number(p.rating||0)>=10}>+</button>
                     </div>
                   </div>
                 ))}
@@ -661,11 +661,11 @@ function SummaryEditorView({ roster, cred, setView }) {
                   <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
                     <div style={S.teamPlayerLine1}>
                       <span style={S.teamPlayerName}>{p.name}</span>
-                      <div style={S.ratingStepper}>
-                        <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)<=0?0.4:1}} onClick={()=>bumpRating("team2",p.id,-0.5)} disabled={Number(p.rating||0)<=0}>−</button>
-                        <span style={S.ratingBadge}>{p.rating || "—"}</span>
-                        <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)>=10?0.4:1}} onClick={()=>bumpRating("team2",p.id,0.5)} disabled={Number(p.rating||0)>=10}>+</button>
-                      </div>
+                    </div>
+                    <div style={{...S.ratingStepper,justifyContent:"center"}}>
+                      <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)<=0?0.4:1}} onClick={()=>bumpRating("team2",p.id,-0.5)} disabled={Number(p.rating||0)<=0}>−</button>
+                      <span style={S.ratingBadge}>{p.rating || "—"}</span>
+                      <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)>=10?0.4:1}} onClick={()=>bumpRating("team2",p.id,0.5)} disabled={Number(p.rating||0)>=10}>+</button>
                     </div>
                   </div>
                 ))}

@@ -543,18 +543,25 @@ function SummaryEditorView({ roster, cred, setView }) {
     }));
   };
   const sumGoals = team => (draft ? draft[team].reduce((s,p)=>s+(p.goals||0), 0) : 0);
+  // בקרת גולים מול התוצאה — ר' שיחה עם המשתמש: "הבקרה היא שסך הגולים
+  // של כל קבוצה צריך להתכנס לתוצאה, אם לא מתאים, להקפיץ הודעה שיש
+  // חוסר התאמה." צריכה לרוץ בכל פעולת-סיום, לא רק בשמירה — ר' שיחה
+  // נוספת: "רק לחצתי קישור לוואטסאפ, צריך שגם שם הבקרה תופעל" —
+  // לכן helper משותף שנקרא גם משמירה וגם משיתוף/העתקה. אזהרה
+  // ידידותית (confirm, לא חוסם) — מאפשר גם להמשיך במכוון אם צריך.
+  const checkGoalsReconciliation = () => {
+    if (!draft) return true;
+    const sum1 = sumGoals("team1"), sum2 = sumGoals("team2");
+    if (draft.team1Score!=null && sum1!==draft.team1Score &&
+        !window.confirm("שים לב: סך הגולים שרשמת לכחולים ("+sum1+") לא תואם לתוצאה שהזנת ("+draft.team1Score+"). להמשיך בכל זאת?")) return false;
+    if (draft.team2Score!=null && sum2!==draft.team2Score &&
+        !window.confirm("שים לב: סך הגולים שרשמת לכתומים ("+sum2+") לא תואם לתוצאה שהזנת ("+draft.team2Score+"). להמשיך בכל זאת?")) return false;
+    return true;
+  };
 
   const save = async () => {
     if (!draft) return;
-    // בקרת גולים מול התוצאה — ר' שיחה עם המשתמש: "הבקרה היא שסך
-    // הגולים של כל קבוצה צריך להתכנס לתוצאה, אם לא מתאים, להקפיץ
-    // הודעה שיש חוסר התאמה." אזהרה ידידותית (confirm, לא חוסם) —
-    // מאפשר גם לשמור טיוטה חלקית באמצע מילוי.
-    const sum1 = sumGoals("team1"), sum2 = sumGoals("team2");
-    if (draft.team1Score!=null && sum1!==draft.team1Score &&
-        !window.confirm("שים לב: סך הגולים שרשמת לכחולים ("+sum1+") לא תואם לתוצאה שהזנת ("+draft.team1Score+"). לשמור בכל זאת?")) return;
-    if (draft.team2Score!=null && sum2!==draft.team2Score &&
-        !window.confirm("שים לב: סך הגולים שרשמת לכתומים ("+sum2+") לא תואם לתוצאה שהזנת ("+draft.team2Score+"). לשמור בכל זאת?")) return;
+    if (!checkGoalsReconciliation()) return;
     setBusy(true); setSavedMsg("");
     const ratings = [...draft.team1, ...draft.team2]
       .filter(p => (p.rating !== "" && p.rating != null) || (p.goals||0) !== 0)
@@ -603,12 +610,16 @@ function SummaryEditorView({ roster, cred, setView }) {
       "\n\n🟠 *כתומים*\n"+draft.team2.map(ratingLine).join("\n");
   };
   const copySummaryMsg = async () => {
+    if (!checkGoalsReconciliation()) return;
     const text = buildSummaryMsg();
     try { await navigator.clipboard.writeText(text); setCopiedMsg("הועתק ללוח! ✓"); }
     catch { window.prompt("העתק ידנית (Ctrl+C):", text); setCopiedMsg(""); }
     setTimeout(()=>setCopiedMsg(""), 2500);
   };
-  const shareSummaryMsg = () => window.open("https://wa.me/?text="+encodeURIComponent(buildSummaryMsg()), "_blank");
+  const shareSummaryMsg = () => {
+    if (!checkGoalsReconciliation()) return;
+    window.open("https://wa.me/?text="+encodeURIComponent(buildSummaryMsg()), "_blank");
+  };
 
   // כפתור חזרה ברור, בתוך הכרטיס עצמו (לא רק בפוטר הדף שלפעמים צריך
   // לגלול אליו) — ר' שיחה עם המשתמש: "עדיין אין אפשרות חזרה למסך

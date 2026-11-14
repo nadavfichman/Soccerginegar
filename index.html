@@ -438,8 +438,18 @@ function InstallButton() {
 // cred) — אם עוברים למסך שחקן וחוזרים, מזינים שוב. מחיר מקובל
 // לפיצ'ר צר-היקף כזה.
 // ============================================================================
+// ניסיון חוזר אוטומטי פעם אחת על כישלון — ר' שיחה עם המשתמש: "זה
+// פעולה שצריכה להתבצע מאחורי הקלעים, לא הגיוני ששניידר יכנס וזה מה
+// שהוא יראה." תקלת רשת/cache חולפת (למשל מיד אחרי פריסת SQL חדש,
+// לפני שה-cache של PostgREST התרענן) לא אמורה להגיע בכלל כהודעת
+// שגיאה למי שרק כותב סיכום — רק כישלון שחוזר גם בניסיון השני נחשב
+// אמיתי ומוצג/נרשם.
 async function callSummary(rpcName, args) {
-  const { data, error } = await db.rpc(rpcName, args);
+  let { data, error } = await db.rpc(rpcName, args);
+  if (error) {
+    await new Promise(r => setTimeout(r, 700));
+    ({ data, error } = await db.rpc(rpcName, args));
+  }
   if (error) {
     console.error(rpcName, error);
     logClientError(error.message, error.details, "callSummary:" + rpcName);

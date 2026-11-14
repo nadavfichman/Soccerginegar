@@ -1283,14 +1283,20 @@ grant execute on function get_round_summary_latest() to anon, authenticated;
 -- האחרון — ציבוריות לגמרי כמו get_round_summary_latest ("נראות"
 -- נשלטת ע"י published, לא ע"י cred). get_round_summary_by_game
 -- בודק published=true לאותו game_id ספציפי (לא ניתן "לנחש" טיוטה).
+-- migrations/0042: דורשת גם game_teams (inner join) — בלי זה, מחזור
+-- שה-game_teams שלו נוקה אחרי הפרסום עדיין היה מופיע ברשימה, ואז
+-- get_round_summary_by_game (שכבר דרשה game_teams) מחזירה אפס שורות
+-- ומציגה עמודות ריקות. אותה דרישה בדיוק שכבר הייתה ל-summary_get_recent_games
+-- (האדמין) מאז migrations/0038.
 create or replace function get_published_round_summaries()
 returns table(game_id text, kickoff bigint, team1_score integer, team2_score integer)
 language plpgsql security definer as $$
 begin
   return query
-    select grs.game_id, g.kickoff, grs.team1_score, grs.team2_score
+    select distinct grs.game_id, g.kickoff, grs.team1_score, grs.team2_score
     from game_round_summary grs
     join games g on g.id = grs.game_id
+    join game_teams gt on gt.game_id = grs.game_id
     where grs.published = true
     order by g.kickoff desc
     limit 20;

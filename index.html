@@ -743,8 +743,13 @@ function RoundSummaryBanner({ roster }) {
 
   const loadDetail = async (gid) => {
     setGameId(gid);
-    const { data } = await db.rpc("get_round_summary_by_game", { input_game_id: gid });
+    const { data, error } = await db.rpc("get_round_summary_by_game", { input_game_id: gid });
+    if (error) logClientError(error.message, error.details, "get_round_summary_by_game");
     const rows = data || [];
+    // שורות ריקות למרות שהמחזור הופיע ברשימה = חוסר התאמה אמיתי בנתונים
+    // (ר' migrations/0042) — לא מצב רגיל, שווה לדעת עליו בלי שהמסך יציג
+    // עמודות ריקות בשקט.
+    if (rows.length === 0) logClientError("get_round_summary_by_game returned 0 rows for a listed game", gid, "RoundSummaryBanner");
     setDetail({
       narrative: rows[0] && rows[0].narrative,
       team1Score: rows[0] && rows[0].team1_score,
@@ -759,6 +764,7 @@ function RoundSummaryBanner({ roster }) {
     if (list !== null) return;
     setLoading(true);
     const { data, error } = await db.rpc("get_published_round_summaries");
+    if (error) logClientError(error.message, error.details, "get_published_round_summaries");
     if (error || !data || data.length===0) { setList([]); setLoading(false); return; }
     setList(data);
     await loadDetail(data[0].game_id);
@@ -786,7 +792,10 @@ function RoundSummaryBanner({ roster }) {
               ))}
             </select>
           )}
-          {detail && (
+          {detail && detail.team1.length===0 && detail.team2.length===0 && (
+            <div style={{...S.subLine,textAlign:"center",padding:10}}>אין נתוני שחקנים זמינים למחזור הזה.</div>
+          )}
+          {detail && (detail.team1.length>0 || detail.team2.length>0) && (
             <>
               {detail.team1Score!=null && <p style={{fontWeight:800,textAlign:"center",marginBottom:6}}>{detail.team1Score} : {detail.team2Score}</p>}
               <div style={S.teamSplitCols}>

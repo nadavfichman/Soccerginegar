@@ -721,7 +721,6 @@ function RoundSummaryBanner({ roster }) {
       {show && summary && (
         <div style={S.teamSplitPanel}>
           {summary.team1Score!=null && <p style={{fontWeight:800,textAlign:"center",marginBottom:6}}>{summary.team1Score} : {summary.team2Score}</p>}
-          {summary.narrative && <p style={{whiteSpace:"pre-wrap",marginBottom:10}}>{summary.narrative}</p>}
           <div style={S.teamSplitCols}>
             <div style={{...S.teamCol,background:"#3b82f6"}}>
               {summary.team1.map(p=>(
@@ -744,6 +743,7 @@ function RoundSummaryBanner({ roster }) {
               ))}
             </div>
           </div>
+          {summary.narrative && <p style={{whiteSpace:"pre-wrap",marginTop:10}}>{summary.narrative}</p>}
         </div>
       )}
     </div>

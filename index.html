@@ -616,6 +616,22 @@ function SummaryEditorView({ roster, cred, setView }) {
   // וואטסאפ לא תומך בצבעים/גופנים — "עיצוב יפה" כאן אומר *בולד* (כוכביות)
   // + אימוג'ים עגולים 🔵/🟠 במקום צבע אמיתי, כותרות מודגשות, ורווחים
   // בין המקטעים כדי שיהיה נעים וקריא.
+  // ר' שיחה עם המשתמש: "ניסיתי לשלוח משחק בוואטסאפ... שתלתי מבקיעים
+  // כששלחתי את ההודעה זה לא קיבל ביטוי... רוצה שגם בסגנון החדש
+  // כשששולחים הודעה יהיו גם המבקיעים בדיוק כמו שדיברנו." אותה
+  // קבוצה-מנצחת/מפסידה שבבאנר לשחקן (RoundSummaryBanner), בטקסט.
+  const buildScorersBlock = () => {
+    const s1 = draft.team1Score, s2 = draft.team2Score;
+    const t1 = { emoji:"🔵", label:"כחולים", scorers: draft.team1.filter(p=>p.goals) };
+    const t2 = { emoji:"🟠", label:"כתומים", scorers: draft.team2.filter(p=>p.goals) };
+    const groups = (s1!=null && s2!=null && s1!==s2)
+      ? (s1>s2 ? [{...t1,tag:"קבוצה מנצחת"},{...t2,tag:"קבוצה מפסידה"}] : [{...t2,tag:"קבוצה מנצחת"},{...t1,tag:"קבוצה מפסידה"}])
+      : [{...t1,tag:"קבוצה"},{...t2,tag:"קבוצה"}];
+    const withScorers = groups.filter(g=>g.scorers.length>0);
+    if (withScorers.length===0) return "";
+    const fmt = p => "• "+p.name+" — *"+p.goals+"*"+(p.goals<0?" (עצמי)":"");
+    return "\n⚽ *מבקיעים:*\n"+withScorers.map(g=>g.emoji+" "+g.tag+" ("+g.label+")\n"+g.scorers.map(fmt).join("\n")).join("\n")+"\n";
+  };
   const buildSummaryMsg = () => {
     if (!draft) return "";
     const s1 = draft.team1Score, s2 = draft.team2Score;
@@ -627,6 +643,7 @@ function SummaryEditorView({ roster, cred, setView }) {
     }
     const ratingLine = p => "• "+p.name+" — *"+(p.rating || "—")+"*";
     return "⚽ *כדורגל גניגרי ושות\'*\n📋 *הסיכום של שניידר*\n"+dateLine+"\n"+scoreLine+
+      buildScorersBlock()+
       "\n"+(draft.narrative||"")+
       "\n\n🔵 *כחולים*\n"+draft.team1.map(ratingLine).join("\n")+
       "\n\n🟠 *כתומים*\n"+draft.team2.map(ratingLine).join("\n");

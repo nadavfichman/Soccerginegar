@@ -439,17 +439,22 @@ function InstallButton() {
 // לפיצ'ר צר-היקף כזה.
 // ============================================================================
 // ניסיון חוזר אוטומטי פעם אחת על כישלון — ר' שיחה עם המשתמש: "זה
-// פעולה שצריכה להתבצע מאחורי הקלעים, לא הגיוני ששניידר יכנס וזה מה
-// שהוא יראה." תקלת רשת/cache חולפת (למשל מיד אחרי פריסת SQL חדש,
-// לפני שה-cache של PostgREST התרענן) לא אמורה להגיע בכלל כהודעת
-// שגיאה למי שרק כותב סיכום — רק כישלון שחוזר גם בניסיון השני נחשב
-// אמיתי ומוצג/נרשם.
-async function callSummary(rpcName, args) {
+// פעולה שצריכה להתבצע מאחורי הקלעים... לא אמור להיעלם." תקלת רשת/
+// cache חולפת (למשל מיד אחרי פריסת SQL חדש, לפני שה-cache של
+// PostgREST התרענן) לא אמורה להגיע בכלל כהודעה/היעלמות למי שרק
+// צופה בסיכום (שחקן) או כותב אותו (שניידר) — רק כישלון שחוזר גם
+// בניסיון השני נחשב אמיתי. משותף לדף העריכה (callSummary) ולבאנר
+// הציבורי לשחקן (RoundSummaryBanner).
+async function rpcRetry(rpcName, args) {
   let { data, error } = await db.rpc(rpcName, args);
   if (error) {
     await new Promise(r => setTimeout(r, 700));
     ({ data, error } = await db.rpc(rpcName, args));
   }
+  return { data, error };
+}
+async function callSummary(rpcName, args) {
+  const { data, error } = await rpcRetry(rpcName, args);
   if (error) {
     console.error(rpcName, error);
     logClientError(error.message, error.details, "callSummary:" + rpcName);
@@ -773,7 +778,7 @@ function RoundSummaryBanner({ roster }) {
 
   const loadDetail = async (gid) => {
     setGameId(gid);
-    const { data, error } = await db.rpc("get_round_summary_by_game", { input_game_id: gid });
+    const { data, error } = await rpcRetry("get_round_summary_by_game", { input_game_id: gid });
     if (error) logClientError(error.message, error.details, "get_round_summary_by_game");
     const rows = data || [];
     // שורות ריקות למרות שהמחזור הופיע ברשימה = חוסר התאמה אמיתי בנתונים
@@ -793,7 +798,7 @@ function RoundSummaryBanner({ roster }) {
     setShow(true);
     if (list !== null) return;
     setLoading(true);
-    const { data, error } = await db.rpc("get_published_round_summaries");
+    const { data, error } = await rpcRetry("get_published_round_summaries");
     if (error) logClientError(error.message, error.details, "get_published_round_summaries");
     if (error || !data || data.length===0) { setList([]); setLoading(false); return; }
     setList(data);
@@ -806,11 +811,15 @@ function RoundSummaryBanner({ roster }) {
     setLoading(false);
   };
 
-  if (list !== null && list.length===0) return null;
+  // ר' שיחה עם המשתמש: "זה לא אמור להיעלם, תמיד אמורים לראות בצד
+  // בצורה קטנה את הסיכומים של שניידר." הכפתור נשאר תמיד — גם כש-
+  // list הוא [] (אין עדיין סיכום מפורסם) מוצגת הודעה ידידותית
+  // במקום להעלים את כל הקומפוננטה.
   return (
     <div style={{marginBottom:10}}>
       <button className="btn" style={{width:"100%",padding:10,fontSize:14}} onClick={toggle}>📋 סיכומי שניידר {show?"▲":"▼"}</button>
       {show && loading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
+      {show && !loading && list && list.length===0 && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>אין עדיין סיכום מפורסם.</div>}
       {show && list && list.length>0 && (
         <div style={S.teamSplitPanel}>
           {list.length>1 && (

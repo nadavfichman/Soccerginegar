@@ -844,7 +844,17 @@ function RoundSummaryBanner({ roster }) {
           )}
           {detail && (detail.team1.length>0 || detail.team2.length>0) && (
             <>
-              {detail.team1Score!=null && <p style={{fontWeight:800,textAlign:"center",marginBottom:6}}>{detail.team1Score} : {detail.team2Score}</p>}
+              {detail.team1Score!=null && (
+                <>
+                  <p style={{fontWeight:800,textAlign:"center",marginBottom:2}}>{detail.team1Score} : {detail.team2Score}</p>
+                  {/* ר' שיחה עם המשתמש: "אפשר לרשום... 10 לכתומים, 5:5
+                      תיקו" — אותה מילת-ניצחון/תיקו כמו בהודעת הוואטסאפ
+                      (buildSummaryMsg), כדי שלא יצטרכו לנחש לפי הצבעים. */}
+                  <p style={{textAlign:"center",marginBottom:6,color:"#5b6b7a",fontSize:13}}>
+                    {detail.team1Score > detail.team2Score ? "🔵 ניצחון לכחולים" : detail.team2Score > detail.team1Score ? "🟠 ניצחון לכתומים" : "🤝 תיקו"}
+                  </p>
+                </>
+              )}
               <div style={S.teamSplitCols}>
                 <div style={{...S.teamCol,background:"#3b82f6"}}>
                   {detail.team1.map(p=>(

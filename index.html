@@ -786,6 +786,7 @@ function RoundSummaryBanner({ roster }) {
     // עמודות ריקות בשקט.
     if (rows.length === 0) logClientError("get_round_summary_by_game returned 0 rows for a listed game", gid, "RoundSummaryBanner");
     setDetail({
+      kickoff: rows[0] && rows[0].kickoff,
       narrative: rows[0] && rows[0].narrative,
       team1Score: rows[0] && rows[0].team1_score,
       team2Score: rows[0] && rows[0].team2_score,
@@ -822,14 +823,21 @@ function RoundSummaryBanner({ roster }) {
       {show && !loading && list && list.length===0 && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>אין עדיין סיכום מפורסם.</div>}
       {show && list && list.length>0 && (
         <div style={S.teamSplitPanel}>
-          {list.length>1 && (
-            <select style={{...S.input,marginBottom:10}} value={gameId} onChange={e=>onSelect(e.target.value)}>
-              {list.map(g=>(
-                <option key={g.game_id} value={g.game_id}>
-                  {dayName(g.kickoff)} {dateOnly(g.kickoff)}{g.team1_score!=null?(" — "+g.team1_score+":"+g.team2_score):""}
-                </option>
-              ))}
-            </select>
+          {/* ר' שיחה עם המשתמש: "אבקש שתהיה אפשרות לבחור סיכום לפי
+              תאריך ויום, שתמיד הברירת מחדל תהיה המשחק האחרון." הבורר
+              מוצג תמיד (לא רק כש-list.length>1) כדי שהיכולת תהיה גלויה
+              וברורה גם כשיש כרגע רק מחזור אחד. */}
+          <select style={{...S.input,marginBottom:10}} value={gameId} onChange={e=>onSelect(e.target.value)}>
+            {list.map(g=>(
+              <option key={g.game_id} value={g.game_id}>
+                {dayName(g.kickoff)} {dateOnly(g.kickoff)}{g.team1_score!=null?(" — "+g.team1_score+":"+g.team2_score):""}
+              </option>
+            ))}
+          </select>
+          {/* תאריך מלא כמו ביתר המסכים (עריכת שניידר/הודעת וואטסאפ) —
+              ר' שיחה עם המשתמש: "חסרים בה פרטים... התאריך." */}
+          {detail && detail.kickoff!=null && (
+            <p style={{textAlign:"center",fontWeight:700,marginBottom:6,color:"#166534"}}>📅 יום {dayName(detail.kickoff)}, {dateOnly(detail.kickoff)}</p>
           )}
           {detail && detail.team1.length===0 && detail.team2.length===0 && (
             <div style={{...S.subLine,textAlign:"center",padding:10}}>אין נתוני שחקנים זמינים למחזור הזה.</div>

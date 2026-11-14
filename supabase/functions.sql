@@ -1147,26 +1147,35 @@ end; $$;
 -- check_login הרגיל (סיסמת אדמין-על/PIN מנהל) ואם לא, את קוד שניידר.
 -- check_login(null,null,null) חסר-תופעות-לוואי (לא רושם ניסיון כושל),
 -- אז שניידר שלא שולח input_pw בכלל לא "נתקע" בלוגיקת הנעילה של אדמין.
+-- migrations/0045: קודם check_summary_login (קוד שניידר, בלי שום
+-- תופעת-לוואי/נעילה), ורק אם נכשל עוברים ל-check_login (האדמין).
+-- לפני כן הסדר היה הפוך — קוד שניידר תקין היה "נוגע" קודם בבדיקת
+-- סיסמת האדמין-על, נכשל שם (כי "1478" ≠ סיסמת האדמין), ו-check_login
+-- רשם את זה כניסיון כושל אמיתי ל-login_attempts (kind='super'). אחרי
+-- 8 כישלונות כאלה תוך 10 דקות — בדיוק מה שקרה תוך כדי בדיקות — כל
+-- המערכת (גם האדמין האמיתי!) ננעלה, וכל קריאה דרך require_summary_access
+-- (כולל summary_save) נכשלה עם 'locked'.
 create or replace function check_summary_access(input_summary_pw text, input_pw text)
 returns boolean language plpgsql security definer as $$
 declare v_role text;
 begin
+  if check_summary_login(input_summary_pw) then return true; end if;
   v_role := check_login(input_pw, null, null);
-  if v_role is not null and v_role <> 'locked' then return true; end if;
-  return check_summary_login(input_summary_pw);
+  return v_role is not null and v_role <> 'locked';
 end; $$;
 
 -- עזר פנימי (לא נקרא ישירות מהלקוח) לשאר ה-RPCs של דף הסיכום — מקבל
 -- אם האישורים הרגילים (אדמין-על/מנהל) תקינים, או אם קוד שניידר תקין.
--- raise בכישלון, אותו עיקרון כמו require_admin.
+-- raise בכישלון, אותו עיקרון כמו require_admin. ר' migrations/0045
+-- לגבי סדר הבדיקה.
 create or replace function require_summary_access(input_summary_pw text, input_pw text, input_phone text, input_pin text)
 returns text language plpgsql security definer as $$
 declare v_role text;
 begin
+  if check_summary_login(input_summary_pw) then return 'schneider'; end if;
   v_role := check_login(input_pw, input_phone, input_pin);
   if v_role = 'locked' then raise exception 'locked'; end if;
   if v_role is not null then return v_role; end if;
-  if check_summary_login(input_summary_pw) then return 'schneider'; end if;
   raise exception 'not_authorized';
 end; $$;
 

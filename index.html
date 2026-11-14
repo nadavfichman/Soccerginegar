@@ -725,63 +725,95 @@ function SummaryEditorView({ roster, cred, setView }) {
   );
 }
 
-// מציג לשחקנים את המחזור האחרון שפורסם ב"דף הסיכום של שניידר" —
-// מכווץ כברירת מחדל, לא טוען כלום עד הרחבה ראשונה (אותו דפוס lazy
-// כמו TeamsDisplay/ClientErrorLog). get_round_summary_latest ציבורי
-// לגמרי, בלי סיסמה — "נראות" כבר מסוננת ע"י published בשרת.
+// מציג לשחקנים את "דף הסיכום של שניידר" — מכווץ כברירת מחדל, לא טוען
+// כלום עד הרחבה ראשונה (אותו דפוס lazy כמו TeamsDisplay/ClientErrorLog).
+// ר' שיחה עם המשתמש: "רוצה ששחקן יוכל לבחור סיכום ולהסתכל עליו, כמובן
+// לצפייה בלבד" — לא רק המחזור האחרון: רשימה נפתחת של כל המחזורים
+// שפורסמו (get_published_round_summaries), ברירת מחדל על האחרון,
+// ופרטי כל מחזור נטענים בבחירה (get_round_summary_by_game). שתיהן
+// ציבוריות לגמרי, בלי סיסמה — "נראות" כבר מסוננת ע"י published בשרת.
 function RoundSummaryBanner({ roster }) {
   const [show,setShow] = useState(false);
   const [loading,setLoading] = useState(false);
-  const [summary,setSummary] = useState(null); // null=עוד לא נטען, false=אין מחזור מפורסם
+  const [list,setList] = useState(null); // null=עוד לא נטען, []=אין מחזור מפורסם
+  const [gameId,setGameId] = useState("");
+  const [detail,setDetail] = useState(null); // פרטי המחזור הנבחר כרגע
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
   const displayNm = (id, guestName) => guestName ? (guestName+" (אורח)") : nameOf(id);
+
+  const loadDetail = async (gid) => {
+    setGameId(gid);
+    const { data } = await db.rpc("get_round_summary_by_game", { input_game_id: gid });
+    const rows = data || [];
+    setDetail({
+      narrative: rows[0] && rows[0].narrative,
+      team1Score: rows[0] && rows[0].team1_score,
+      team2Score: rows[0] && rows[0].team2_score,
+      team1: rows.filter(r=>r.team===1).map(r=>({ id:r.player_id, name:displayNm(r.player_id,r.guest_name), rating:r.rating })),
+      team2: rows.filter(r=>r.team===2).map(r=>({ id:r.player_id, name:displayNm(r.player_id,r.guest_name), rating:r.rating })),
+    });
+  };
   const toggle = async () => {
     if (show) { setShow(false); return; }
     setShow(true);
-    if (summary !== null) return;
+    if (list !== null) return;
     setLoading(true);
-    const { data, error } = await db.rpc("get_round_summary_latest");
+    const { data, error } = await db.rpc("get_published_round_summaries");
+    if (error || !data || data.length===0) { setList([]); setLoading(false); return; }
+    setList(data);
+    await loadDetail(data[0].game_id);
     setLoading(false);
-    if (error || !data || data.length===0) { setSummary(false); return; }
-    setSummary({
-      narrative: data[0].narrative,
-      team1Score: data[0].team1_score,
-      team2Score: data[0].team2_score,
-      team1: data.filter(r=>r.team===1).map(r=>({ id:r.player_id, name:displayNm(r.player_id,r.guest_name), rating:r.rating })),
-      team2: data.filter(r=>r.team===2).map(r=>({ id:r.player_id, name:displayNm(r.player_id,r.guest_name), rating:r.rating })),
-    });
   };
-  if (summary === false) return null;
+  const onSelect = async (gid) => {
+    setLoading(true);
+    await loadDetail(gid);
+    setLoading(false);
+  };
+
+  if (list !== null && list.length===0) return null;
   return (
     <div style={{marginBottom:10}}>
-      <button className="btn" style={{width:"100%",padding:10,fontSize:14}} onClick={toggle}>📋 סיכום המחזור האחרון {show?"▲":"▼"}</button>
+      <button className="btn" style={{width:"100%",padding:10,fontSize:14}} onClick={toggle}>📋 סיכומי שניידר {show?"▲":"▼"}</button>
       {show && loading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
-      {show && summary && (
+      {show && list && list.length>0 && (
         <div style={S.teamSplitPanel}>
-          {summary.team1Score!=null && <p style={{fontWeight:800,textAlign:"center",marginBottom:6}}>{summary.team1Score} : {summary.team2Score}</p>}
-          <div style={S.teamSplitCols}>
-            <div style={{...S.teamCol,background:"#3b82f6"}}>
-              {summary.team1.map(p=>(
-                <div key={p.id} style={{...S.teamsDisplayRow,color:"#fff"}}>
-                  <div style={S.teamsDisplayTop}>
-                    <span style={S.teamsDisplayName}>{p.name}</span>
-                    {p.rating!=null && <span style={S.teamCardBadge}>{p.rating}</span>}
-                  </div>
-                </div>
+          {list.length>1 && (
+            <select style={{...S.input,marginBottom:10}} value={gameId} onChange={e=>onSelect(e.target.value)}>
+              {list.map(g=>(
+                <option key={g.game_id} value={g.game_id}>
+                  {dayName(g.kickoff)} {dateOnly(g.kickoff)}{g.team1_score!=null?(" — "+g.team1_score+":"+g.team2_score):""}
+                </option>
               ))}
-            </div>
-            <div style={{...S.teamCol,background:"#f97316"}}>
-              {summary.team2.map(p=>(
-                <div key={p.id} style={{...S.teamsDisplayRow,color:"#fff"}}>
-                  <div style={S.teamsDisplayTop}>
-                    <span style={S.teamsDisplayName}>{p.name}</span>
-                    {p.rating!=null && <span style={S.teamCardBadge}>{p.rating}</span>}
-                  </div>
+            </select>
+          )}
+          {detail && (
+            <>
+              {detail.team1Score!=null && <p style={{fontWeight:800,textAlign:"center",marginBottom:6}}>{detail.team1Score} : {detail.team2Score}</p>}
+              <div style={S.teamSplitCols}>
+                <div style={{...S.teamCol,background:"#3b82f6"}}>
+                  {detail.team1.map(p=>(
+                    <div key={p.id} style={{...S.teamsDisplayRow,color:"#fff"}}>
+                      <div style={S.teamsDisplayTop}>
+                        <span style={S.teamsDisplayName}>{p.name}</span>
+                        {p.rating!=null && <span style={S.teamCardBadge}>{p.rating}</span>}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
-          {summary.narrative && <p style={{whiteSpace:"pre-wrap",marginTop:10}}>{summary.narrative}</p>}
+                <div style={{...S.teamCol,background:"#f97316"}}>
+                  {detail.team2.map(p=>(
+                    <div key={p.id} style={{...S.teamsDisplayRow,color:"#fff"}}>
+                      <div style={S.teamsDisplayTop}>
+                        <span style={S.teamsDisplayName}>{p.name}</span>
+                        {p.rating!=null && <span style={S.teamCardBadge}>{p.rating}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {detail.narrative && <p style={{whiteSpace:"pre-wrap",marginTop:10}}>{detail.narrative}</p>}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -844,10 +876,14 @@ function PlayerView({ roster, pending, games, session, identity, now, refresh, l
       <section style={S.hello}>
         <div style={S.helloName}>שלום, {me.name} 👋</div>
       </section>
-      <RoundSummaryBanner roster={roster} />
       {nextToOpen && <CountdownBanner game={nextToOpen} now={now} />}
       {visible.length===0 && <div style={S.empty}>אין כרגע משחקים מפורסמים.</div>}
       {visible.map(g => <GameCard key={g.id} game={g} roster={roster} me={me} now={now} refresh={refresh} attendanceCounts={attendanceCounts} hideHeader={g.id===bannerAdjacentGameId} />)}
+      {/* ר' שיחה עם המשתמש: "ברגע שמפרסם משחק חדש ויש ספירה לאחור,
+          הסיכום של שניידר צריך לרדת למטה" — מתחת לספירה-לאחור/רשימת
+          המשחקים, לא מעליה, כדי שהפעולה החיה (הרשמה למשחק הבא) תהיה
+          ראשונה. */}
+      <RoundSummaryBanner roster={roster} />
     </main>
   );
 }

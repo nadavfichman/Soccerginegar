@@ -1180,12 +1180,14 @@ language plpgsql security definer as $$
 begin
   perform require_summary_access(input_summary_pw, input_pw, input_phone, input_pin);
   return query
+    -- migrations/0044: בלי limit — ר' שיחה עם המשתמש: "המשחק האמיתי
+    -- תמיד צריך להופיע גם אם יש 100 משחקים." הטבלה הזו (משחקים עם
+    -- חלוקה שמורה בקבוצה חובבנית) לא צפויה להיות גדולה, אין סיבה לחתוך.
     select distinct g.id, g.kickoff, grs.team1_score, grs.team2_score, coalesce(grs.published, false)
     from games g
     join game_teams gt on gt.game_id = g.id
     left join game_round_summary grs on grs.game_id = g.id
-    order by g.kickoff desc
-    limit 30;
+    order by g.kickoff desc;
 end; $$;
 
 -- שורה לכל שחקן מהחלוקה לקבוצות שכבר נשמרה (game_teams) — לא מקליד

@@ -500,7 +500,7 @@ function SummaryEditorView({ roster, cred, setView }) {
     setBusy(false);
     const rows = data || [];
     const g = (games||[]).find(x=>x.game_id===gid);
-    const toPlayer = r => ({ id: r.player_id, name: displayNm(r.player_id, r.guest_name), rating: r.rating != null ? String(r.rating) : "" });
+    const toPlayer = r => ({ id: r.player_id, name: displayNm(r.player_id, r.guest_name), rating: r.rating != null ? String(r.rating) : "", goals: r.goals != null ? r.goals : 0 });
     setDraft({
       team1: rows.filter(r=>r.team===1).map(toPlayer),
       team2: rows.filter(r=>r.team===2).map(toPlayer),
@@ -534,13 +534,31 @@ function SummaryEditorView({ roster, cred, setView }) {
       }),
     }));
   };
+  // גולים לכל שחקן, -5 עד 10 (כולל גול עצמי כערך שלילי) — ר' שיחה עם
+  // המשתמש: "מספרים שלמים... מגבלה בין -5 ל-10, כי יש גם גול עצמי."
+  const bumpGoals = (team, pid, delta) => {
+    setDraft(prev => ({
+      ...prev,
+      [team]: prev[team].map(p => p.id===pid ? { ...p, goals: Math.max(-5, Math.min(10, (p.goals||0) + delta)) } : p),
+    }));
+  };
+  const sumGoals = team => (draft ? draft[team].reduce((s,p)=>s+(p.goals||0), 0) : 0);
 
   const save = async () => {
     if (!draft) return;
+    // בקרת גולים מול התוצאה — ר' שיחה עם המשתמש: "הבקרה היא שסך
+    // הגולים של כל קבוצה צריך להתכנס לתוצאה, אם לא מתאים, להקפיץ
+    // הודעה שיש חוסר התאמה." אזהרה ידידותית (confirm, לא חוסם) —
+    // מאפשר גם לשמור טיוטה חלקית באמצע מילוי.
+    const sum1 = sumGoals("team1"), sum2 = sumGoals("team2");
+    if (draft.team1Score!=null && sum1!==draft.team1Score &&
+        !window.confirm("שים לב: סך הגולים שרשמת לכחולים ("+sum1+") לא תואם לתוצאה שהזנת ("+draft.team1Score+"). לשמור בכל זאת?")) return;
+    if (draft.team2Score!=null && sum2!==draft.team2Score &&
+        !window.confirm("שים לב: סך הגולים שרשמת לכתומים ("+sum2+") לא תואם לתוצאה שהזנת ("+draft.team2Score+"). לשמור בכל זאת?")) return;
     setBusy(true); setSavedMsg("");
     const ratings = [...draft.team1, ...draft.team2]
-      .filter(p => p.rating !== "" && p.rating != null)
-      .map(p => ({ player_id: p.id, rating: Number(p.rating) }));
+      .filter(p => (p.rating !== "" && p.rating != null) || (p.goals||0) !== 0)
+      .map(p => ({ player_id: p.id, rating: (p.rating !== "" && p.rating != null) ? Number(p.rating) : null, goals: p.goals||0 }));
     const { error } = await callSummary("summary_save", {
       ...credArgs(), input_game_id: gameId,
       input_narrative: draft.narrative, input_published: draft.published, input_ratings: ratings,
@@ -641,6 +659,12 @@ function SummaryEditorView({ roster, cred, setView }) {
               <input type="number" min="0" style={{...S.input,width:64,padding:6}} value={draft.team2Score ?? ""} onChange={e=>setDraft(prev=>({...prev,team2Score:e.target.value===""?null:Number(e.target.value)}))} />
               <span style={{...S.subLine,color:"#f97316",fontWeight:700}}>כתומים</span>
             </div>
+            {/* רמז חי לסכום הגולים לעומת התוצאה — ר' שיחה עם המשתמש:
+                "פשוט וידידותי." בלי לחכות ללחיצה על שמור. */}
+            <div style={{display:"flex",gap:16,marginTop:4}}>
+              <span style={{fontSize:12,color:(draft.team1Score!=null && sumGoals("team1")!==draft.team1Score)?"#c0392b":"#5b6b7a"}}>⚽ כחולים: {sumGoals("team1")}</span>
+              <span style={{fontSize:12,color:(draft.team2Score!=null && sumGoals("team2")!==draft.team2Score)?"#c0392b":"#5b6b7a"}}>⚽ כתומים: {sumGoals("team2")}</span>
+            </div>
             <div style={{...S.teamSplitCols,marginTop:10}}>
               <div style={{...S.teamCol,background:"#3b82f6"}}>
                 {draft.team1.map(p => (
@@ -649,9 +673,16 @@ function SummaryEditorView({ roster, cred, setView }) {
                       <span style={S.teamPlayerName}>{p.name}</span>
                     </div>
                     <div style={{...S.ratingStepper,justifyContent:"center"}}>
+                      <span style={{fontSize:11,opacity:.85}}>⭐</span>
                       <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)<=0?0.4:1}} onClick={()=>bumpRating("team1",p.id,-0.5)} disabled={Number(p.rating||0)<=0}>−</button>
                       <span style={S.ratingBadge}>{p.rating || "—"}</span>
                       <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)>=10?0.4:1}} onClick={()=>bumpRating("team1",p.id,0.5)} disabled={Number(p.rating||0)>=10}>+</button>
+                    </div>
+                    <div style={{...S.ratingStepper,justifyContent:"center",marginTop:4}}>
+                      <span style={{fontSize:11,opacity:.85}}>⚽</span>
+                      <button type="button" style={{...S.ratingStepBtn,opacity:(p.goals||0)<=-5?0.4:1}} onClick={()=>bumpGoals("team1",p.id,-1)} disabled={(p.goals||0)<=-5}>−</button>
+                      <span style={S.ratingBadge}>{p.goals||0}</span>
+                      <button type="button" style={{...S.ratingStepBtn,opacity:(p.goals||0)>=10?0.4:1}} onClick={()=>bumpGoals("team1",p.id,1)} disabled={(p.goals||0)>=10}>+</button>
                     </div>
                   </div>
                 ))}
@@ -663,9 +694,16 @@ function SummaryEditorView({ roster, cred, setView }) {
                       <span style={S.teamPlayerName}>{p.name}</span>
                     </div>
                     <div style={{...S.ratingStepper,justifyContent:"center"}}>
+                      <span style={{fontSize:11,opacity:.85}}>⭐</span>
                       <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)<=0?0.4:1}} onClick={()=>bumpRating("team2",p.id,-0.5)} disabled={Number(p.rating||0)<=0}>−</button>
                       <span style={S.ratingBadge}>{p.rating || "—"}</span>
                       <button type="button" style={{...S.ratingStepBtn,opacity:Number(p.rating||0)>=10?0.4:1}} onClick={()=>bumpRating("team2",p.id,0.5)} disabled={Number(p.rating||0)>=10}>+</button>
+                    </div>
+                    <div style={{...S.ratingStepper,justifyContent:"center",marginTop:4}}>
+                      <span style={{fontSize:11,opacity:.85}}>⚽</span>
+                      <button type="button" style={{...S.ratingStepBtn,opacity:(p.goals||0)<=-5?0.4:1}} onClick={()=>bumpGoals("team2",p.id,-1)} disabled={(p.goals||0)<=-5}>−</button>
+                      <span style={S.ratingBadge}>{p.goals||0}</span>
+                      <button type="button" style={{...S.ratingStepBtn,opacity:(p.goals||0)>=10?0.4:1}} onClick={()=>bumpGoals("team2",p.id,1)} disabled={(p.goals||0)>=10}>+</button>
                     </div>
                   </div>
                 ))}
@@ -2050,7 +2088,7 @@ function RoundSummaryHistory({ cred, roster, setView }) {
     }
   });
   games.sort((a,b)=>b.kickoff-a.kickoff);
-  const playersFor = (gid, team) => (rows||[]).filter(r=>r.game_id===gid && r.team===team).map(r=>({ id:r.player_id, name:displayNm(r.player_id, r.guest_name), rating:r.rating }));
+  const playersFor = (gid, team) => (rows||[]).filter(r=>r.game_id===gid && r.team===team).map(r=>({ id:r.player_id, name:displayNm(r.player_id, r.guest_name), rating:r.rating, goals:r.goals }));
   return (
     <section style={S.card}>
       <h2 style={S.h2}>📋 סיכומי שניידר</h2>
@@ -2081,7 +2119,8 @@ function RoundSummaryHistory({ cred, roster, setView }) {
                       <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
                         <div style={S.teamPlayerLine1}>
                           <span style={S.teamPlayerName}>{p.name}</span>
-                          {p.rating!=null && <span style={S.teamCardBadge}>{p.rating}</span>}
+                          {p.rating!=null && <span style={S.teamCardBadge}>⭐{p.rating}</span>}
+                          {!!p.goals && <span style={S.teamCardBadge}>⚽{p.goals}</span>}
                         </div>
                       </div>
                     ))}
@@ -2091,7 +2130,8 @@ function RoundSummaryHistory({ cred, roster, setView }) {
                       <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
                         <div style={S.teamPlayerLine1}>
                           <span style={S.teamPlayerName}>{p.name}</span>
-                          {p.rating!=null && <span style={S.teamCardBadge}>{p.rating}</span>}
+                          {p.rating!=null && <span style={S.teamCardBadge}>⭐{p.rating}</span>}
+                          {!!p.goals && <span style={S.teamCardBadge}>⚽{p.goals}</span>}
                         </div>
                       </div>
                     ))}

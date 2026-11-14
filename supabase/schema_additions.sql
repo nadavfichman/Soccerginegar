@@ -93,11 +93,14 @@ alter table game_round_summary enable row level security;
 -- ציון 0-10 עם חצאים בלבד (rating*2 = floor(rating*2), אכיפה בצד השרת
 -- לא רק step="0.5"/min/max ב-UI) לכל שחקן, לפי משחק. player_id חופשי
 -- כמו registrations/game_teams — תומך גם באורחים (guest_<uuid>) בלי
--- שינוי. הטווח עודכן מ-1-10 ל-0-10 ב-migrations/0039.
+-- שינוי. הטווח עודכן מ-1-10 ל-0-10 ב-migrations/0039. goals (-5 עד
+-- 10, כולל גול עצמי כערך שלילי) נוסף ב-migrations/0040 — rating
+-- הפך לניתן ל-null אז, כדי שגולים יוכלו להירשם גם בלי ציון.
 create table if not exists game_round_summary_ratings (
   game_id text not null references games(id) on delete cascade,
   player_id text not null,
-  rating numeric(3,1) not null check (rating >= 0 and rating <= 10 and rating*2 = floor(rating*2)),
+  rating numeric(3,1) check (rating is null or (rating >= 0 and rating <= 10 and rating*2 = floor(rating*2))),
+  goals integer check (goals is null or (goals >= -5 and goals <= 10)),
   primary key (game_id, player_id)
 );
 alter table game_round_summary_ratings enable row level security;

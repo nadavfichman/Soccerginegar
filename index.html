@@ -1475,7 +1475,12 @@ function AdminView({ roster, pending, games, now, role, setRole, admins, myPhone
             </>
           )}
           {activeTab==="stats" && <StatsTable roster={roster} cred={cred} grades={grades} />}
-          {activeTab==="summaries" && <RoundSummaryHistory cred={cred} roster={roster} setView={setView} />}
+          {activeTab==="summaries" && (
+            <>
+              <SummaryLeaderboard cred={cred} roster={roster} />
+              <RoundSummaryHistory cred={cred} roster={roster} setView={setView} />
+            </>
+          )}
         </>
       ) : (
         <AdminGames {...{ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }} />
@@ -2123,6 +2128,69 @@ function GameResultsHistory({ cred, roster, games }) {
 // טאב אדמין לצפייה בכל סיכומי "דף הסיכום של שניידר" (טיוטות+פרסומים,
 // לא רק האחרון שפורסם כמו RoundSummaryBanner לשחקנים) — ר' שיחה עם
 // המשתמש: "זה מספיק חשוב שיהיה לזה את הגישה שלו, שאני פשוט אסתכל על
+// מלך שערים + ממוצע ציונים (שניידר), לפי תקופה — ר' שיחה עם המשתמש
+// (הדגיש פעמיים): "אין לציוני שניידר שום השפעה על הכוחות או על
+// ציון שחקן בחלוקה. אני רק רוצה לתעד... שיהיה לנו נתון." שתי טבלאות
+// ממוין מאותה קריאה אחת (admin_get_summary_stats) — שרת ממיין לפי
+// גולים כברירת מחדל, לקוח ממיין שוב לפי ממוצע ציון לתצוגה השנייה,
+// בלי קריאה נוספת. סינון לפי תקופה (שני inputs type="date") מרענן
+// את הקריאה.
+function SummaryLeaderboard({ cred, roster }) {
+  const [from,setFrom] = useState("");
+  const [to,setTo] = useState("");
+  const [rows,setRows] = useState(null);
+  const [loading,setLoading] = useState(false);
+  const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
+  const displayNm = (id, guestName) => guestName ? (guestName+" (אורח)") : nameOf(id);
+
+  const load = async () => {
+    setLoading(true);
+    const credArgs = { input_pw: cred.pw||null, input_phone: cred.phone||null, input_pin: cred.pin||null };
+    const fromTs = from ? new Date(from+"T00:00:00").getTime() : null;
+    const toTs = to ? new Date(to+"T23:59:59").getTime() : null;
+    const data = await callAdmin("admin_get_summary_stats", { ...credArgs, input_from_ts: fromTs, input_to_ts: toTs });
+    setRows(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const byGoals = (rows||[]).filter(r=>r.total_goals>0).slice().sort((a,b)=>b.total_goals-a.total_goals);
+  const byRating = (rows||[]).filter(r=>r.avg_rating!=null).slice().sort((a,b)=>b.avg_rating-a.avg_rating);
+
+  return (
+    <section style={S.card}>
+      <h2 style={S.h2}>🏆 מלך שערים וממוצע ציונים</h2>
+      <p style={S.hint}>מבוסס רק על ציוני/גולי שניידר — לא קשור בשום צורה לכוחות או לציון שחקן בחלוקה.</p>
+      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10,flexWrap:"wrap"}}>
+        <label style={S.labelSm}>מתאריך</label>
+        <input type="date" style={{...S.input,width:150,padding:6}} value={from} onChange={e=>setFrom(e.target.value)} />
+        <label style={S.labelSm}>עד תאריך</label>
+        <input type="date" style={{...S.input,width:150,padding:6}} value={to} onChange={e=>setTo(e.target.value)} />
+        <button className="btn small" onClick={load} disabled={loading}>{loading?"טוען…":"סנן"}</button>
+      </div>
+      {loading && <div style={{...S.subLine,textAlign:"center"}}>טוען…</div>}
+      {!loading && rows && (
+        <>
+          <h3 style={S.h2}>⚽ מלך שערים</h3>
+          {byGoals.length===0 && <p style={S.hint}>אין נתוני גולים בתקופה הזו.</p>}
+          <ol style={S.ol}>
+            {byGoals.map(r=>(
+              <li key={r.player_id}>{displayNm(r.player_id, r.guest_name)} — {r.total_goals} שערים ({r.games_count} משחקים)</li>
+            ))}
+          </ol>
+          <h3 style={{...S.h2,marginTop:14}}>⭐ ממוצע ציונים</h3>
+          {byRating.length===0 && <p style={S.hint}>אין נתוני ציונים בתקופה הזו.</p>}
+          <ol style={S.ol}>
+            {byRating.map(r=>(
+              <li key={r.player_id}>{displayNm(r.player_id, r.guest_name)} — {Number(r.avg_rating).toFixed(1)} ({r.games_count} משחקים)</li>
+            ))}
+          </ol>
+        </>
+      )}
+    </section>
+  );
+}
+
 // כל הסיכום הקיים והאחרונים." הרשימה כאן קריאה בלבד, אבל יש כפתור
 // שמעביר ל-SummaryEditorView (אותו מסך בדיוק ששניידר רואה) עם ה-cred
 // הקיים — האדמין יכול למלא/לערוך בעצמו בלי להקיש סיסמה שוב, ל"יום

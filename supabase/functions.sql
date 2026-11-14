@@ -1354,6 +1354,31 @@ begin
     order by g.kickoff desc;
 end; $$;
 
+-- migrations/0047: מלך שערים + ממוצע ציונים (שניידר), לפי תקופה —
+-- ר' שיחה עם המשתמש (הדגיש פעמיים): "אין לציוני שניידר שום השפעה
+-- על הכוחות או על ציון שחקן בחלוקה." קורא בלבד מ-game_round_summary_ratings/
+-- games, לא נוגע ב-players.grade/logic.js בשום צורה.
+create or replace function admin_get_summary_stats(input_pw text, input_phone text, input_pin text, input_from_ts bigint default null, input_to_ts bigint default null)
+returns table(player_id text, guest_name text, games_count bigint, total_goals bigint, avg_rating numeric)
+language plpgsql security definer as $$
+declare v_role text;
+begin
+  v_role := require_admin(input_pw, input_phone, input_pin);
+  return query
+    select rt.player_id,
+      max(reg.guest_name) as guest_name,
+      count(distinct rt.game_id) as games_count,
+      coalesce(sum(rt.goals), 0) as total_goals,
+      avg(rt.rating) as avg_rating
+    from game_round_summary_ratings rt
+    join games g on g.id = rt.game_id
+    left join registrations reg on reg.game_id = rt.game_id and reg.player_id = rt.player_id
+    where (input_from_ts is null or g.kickoff >= input_from_ts)
+      and (input_to_ts is null or g.kickoff <= input_to_ts)
+    group by rt.player_id
+    order by total_goals desc;
+end; $$;
+
 -- הפונקציות הבאות קיימות במערכת אך הגוף שלהן לא תועד כאן (לא הוצג לנו
 -- במהלך הפרויקט) — הן קיימות ופועלות, רק שהעתק הקוד שלהן לא נאסף:
 --   login_hint(input_phone)

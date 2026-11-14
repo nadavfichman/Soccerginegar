@@ -450,6 +450,7 @@ function SummaryEditorView({ roster, cred, setView }) {
   const [pw,setPw] = useState("");
   const [verifiedPw,setVerifiedPw] = useState(null);
   const [loginErr,setLoginErr] = useState("");
+  const [gamesErr,setGamesErr] = useState("");
   const [busy,setBusy] = useState(false);
   const [games,setGames] = useState(null); // [{game_id,kickoff,team1_score,team2_score,published}]
   const [gameId,setGameId] = useState("");
@@ -479,6 +480,11 @@ function SummaryEditorView({ roster, cred, setView }) {
     setBusy(true);
     const res = await callSummary("summary_get_recent_games", { input_summary_pw: pw, input_pw: pw });
     setBusy(false);
+    // ר' שיחה עם המשתמש — "למה לא מראה לי את האפשרויות" כשרשימת
+    // המשחקים ריקה: עד עכשיו שגיאת RPC כאן הייתה נבלעת בשקט לרשימה
+    // ריקה, בלי שום סימן שמשהו נכשל. עכשיו מוצג הבדל ברור בין "שגיאה"
+    // ל"אין משחקים עם חלוקה שמורה בכלל".
+    setGamesErr(res.error ? "טעינת המשחקים נכשלה — נסה לרענן." : "");
     setGames(res.data || []);
   };
 
@@ -488,6 +494,7 @@ function SummaryEditorView({ roster, cred, setView }) {
       setBusy(true);
       const res = await callSummary("summary_get_recent_games", credArgs());
       setBusy(false);
+      setGamesErr(res.error ? "טעינת המשחקים נכשלה — נסה לרענן." : "");
       setGames(res.data || []);
     })();
   }, []);
@@ -659,6 +666,8 @@ function SummaryEditorView({ roster, cred, setView }) {
             </option>
           ))}
         </select>
+        {gamesErr && <p style={S.errText}>{gamesErr}</p>}
+        {!gamesErr && !busy && games && games.length===0 && <p style={S.hint}>אין כרגע אף משחק עם חלוקה שמורה לקבוצות — קודם צריך לחלק לקבוצות משחק (בטאב "משחקים"), ואז הוא יופיע כאן.</p>}
         {busy && !draft && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
         {draft && (
           <>

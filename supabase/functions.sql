@@ -1185,7 +1185,7 @@ begin
     join game_teams gt on gt.game_id = g.id
     left join game_round_summary grs on grs.game_id = g.id
     order by g.kickoff desc
-    limit 10;
+    limit 30;
 end; $$;
 
 -- שורה לכל שחקן מהחלוקה לקבוצות שכבר נשמרה (game_teams) — לא מקליד

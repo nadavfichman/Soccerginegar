@@ -1299,7 +1299,13 @@ grant execute on function get_round_summary_latest() to anon, authenticated;
 -- get_round_summary_by_game (שכבר דרשה game_teams) מחזירה אפס שורות
 -- ומציגה עמודות ריקות. אותה דרישה בדיוק שכבר הייתה ל-summary_get_recent_games
 -- (האדמין) מאז migrations/0038.
-create or replace function get_published_round_summaries()
+-- migrations/0048: drop+create מפורש (לא רק create or replace) —
+-- אימתנו ישירות במסד הנתונים שהנתונים תקינים (teams_count/ratings_count
+-- גדולים מ-0, published=true) בזמן שהפונקציה הזו עדיין החזירה אפס
+-- שורות, גם אחרי NOTIFY pgrst ורענון מלא בצד הלקוח — drop+create
+-- שולל לגמרי אפשרות של overload ישן/תקוע.
+drop function if exists get_published_round_summaries();
+create function get_published_round_summaries()
 returns table(game_id text, kickoff bigint, team1_score integer, team2_score integer)
 language plpgsql security definer as $$
 begin
@@ -1309,12 +1315,12 @@ begin
     join games g on g.id = grs.game_id
     join game_teams gt on gt.game_id = grs.game_id
     where grs.published = true
-    order by g.kickoff desc
-    limit 20;
+    order by g.kickoff desc;
 end; $$;
 grant execute on function get_published_round_summaries() to anon, authenticated;
 
-create or replace function get_round_summary_by_game(input_game_id text)
+drop function if exists get_round_summary_by_game(text);
+create function get_round_summary_by_game(input_game_id text)
 returns table(game_id text, kickoff bigint, narrative text, team1_score integer, team2_score integer, player_id text, team smallint, guest_name text, rating numeric, goals integer)
 language plpgsql security definer as $$
 begin
@@ -1358,7 +1364,9 @@ end; $$;
 -- ר' שיחה עם המשתמש (הדגיש פעמיים): "אין לציוני שניידר שום השפעה
 -- על הכוחות או על ציון שחקן בחלוקה." קורא בלבד מ-game_round_summary_ratings/
 -- games, לא נוגע ב-players.grade/logic.js בשום צורה.
-create or replace function admin_get_summary_stats(input_pw text, input_phone text, input_pin text, input_from_ts bigint default null, input_to_ts bigint default null)
+-- migrations/0048: drop+create מפורש, אותה סיבה כמו למעלה.
+drop function if exists admin_get_summary_stats(text, text, text, bigint, bigint);
+create function admin_get_summary_stats(input_pw text, input_phone text, input_pin text, input_from_ts bigint default null, input_to_ts bigint default null)
 returns table(player_id text, guest_name text, games_count bigint, total_goals bigint, avg_rating numeric)
 language plpgsql security definer as $$
 declare v_role text;

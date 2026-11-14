@@ -581,9 +581,15 @@ function SummaryEditorView({ roster, cred, setView }) {
     return true;
   };
 
+  // מחזירה true/false (הצלחה/כישלון) — ר' שיחה עם המשתמש: שיתף
+  // לוואטסאפ לפני ששמר, ההודעה הציגה נכון את מה שהיה על המסך, אבל
+  // זה מעולם לא נשמר בפועל במסד הנתונים, ומסך השחקן (שקורא מהמסד
+  // נתונים) לא הראה כלום. copySummaryMsg/shareSummaryMsg עכשיו
+  // שומרים בפועל לפני שהם בונים את ההודעה, כדי שמה שנשלח תמיד יתאים
+  // למה ששמור.
   const save = async () => {
-    if (!draft) return;
-    if (!checkGoalsReconciliation()) return;
+    if (!draft) return false;
+    if (!checkGoalsReconciliation()) return false;
     setBusy(true); setSavedMsg("");
     const ratings = [...draft.team1, ...draft.team2]
       .filter(p => (p.rating !== "" && p.rating != null) || (p.goals||0) !== 0)
@@ -594,10 +600,11 @@ function SummaryEditorView({ roster, cred, setView }) {
       input_team1_score: draft.team1Score, input_team2_score: draft.team2Score,
     });
     setBusy(false);
-    if (error) { setSavedMsg("השמירה נכשלה — נסה שוב."); return; }
+    if (error) { setSavedMsg("השמירה נכשלה — נסה שוב."); return false; }
     setSavedMsg("נשמר! ✓");
     setGames(prev => (prev||[]).map(g => g.game_id===gameId ? { ...g, published: draft.published } : g));
     setTimeout(()=>setSavedMsg(""), 2500);
+    return true;
   };
 
   const delSummary = async () => {
@@ -649,15 +656,19 @@ function SummaryEditorView({ roster, cred, setView }) {
       "\n\n🟠 *כתומים*\n"+draft.team2.map(ratingLine).join("\n");
   };
   const copySummaryMsg = async () => {
-    if (!checkGoalsReconciliation()) return;
+    if (!(await save())) return;
     const text = buildSummaryMsg();
     try { await navigator.clipboard.writeText(text); setCopiedMsg("הועתק ללוח! ✓"); }
     catch { window.prompt("העתק ידנית (Ctrl+C):", text); setCopiedMsg(""); }
     setTimeout(()=>setCopiedMsg(""), 2500);
   };
-  const shareSummaryMsg = () => {
-    if (!checkGoalsReconciliation()) return;
-    window.open("https://wa.me/?text="+encodeURIComponent(buildSummaryMsg()), "_blank");
+  // פותחים טאב ריק באופן מיידי וסינכרוני (בתוך תגובת-הלחיצה עצמה) ורק
+  // אז מנווטים אותו — אחרת, אחרי ה-await של save(), חלק מהדפדפנים
+  // (בעיקר Safari) חוסמים window.open כי הוא כבר לא "תוך כדי" הקליק.
+  const shareSummaryMsg = async () => {
+    const win = window.open("", "_blank");
+    if (!(await save())) { if (win) win.close(); return; }
+    if (win) win.location.href = "https://wa.me/?text="+encodeURIComponent(buildSummaryMsg());
   };
 
   // כפתור חזרה ברור, בתוך הכרטיס עצמו (לא רק בפוטר הדף שלפעמים צריך

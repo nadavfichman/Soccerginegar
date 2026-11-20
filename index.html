@@ -2969,7 +2969,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
               כמו הדירוגים עצמם — לא מוצג לשחקנים. */}
           {(() => {
             const p1 = teamWinProbability(chemistry, adjustedForSplit, teamSplit.team1.map(p=>p.id), teamSplit.team2.map(p=>p.id));
-            return <div style={{textAlign:"center",color:"#fff",fontSize:13,opacity:0.9,marginBottom:4}}>🔮 סיכוי ניצחון משוער: קבוצה 1 {p1}% · קבוצה 2 {100-p1}%</div>;
+            return <div style={{textAlign:"center",color:"#1a2e1a",fontSize:13,opacity:0.9,marginBottom:4}}>🔮 סיכוי ניצחון משוער: קבוצה 1 {p1}% · קבוצה 2 {100-p1}%</div>;
           })()}
           <div style={S.teamSplitFooterRow}>
             <div style={{...S.teamSplitFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teamSplit.team1.length} שחקנים · דירוג {teamSplit.team1.reduce((s,p)=>s+p.grade,0)}</div>

@@ -627,6 +627,17 @@ function SummaryEditorView({ roster, cred, setView }) {
   // נוספת: "רק לחצתי קישור לוואטסאפ, צריך שגם שם הבקרה תופעל" —
   // לכן helper משותף שנקרא גם משמירה וגם משיתוף/העתקה. אזהרה
   // ידידותית (confirm, לא חוסם) — מאפשר גם להמשיך במכוון אם צריך.
+  // תזכורת ידידותית (confirm, לא חוסם) אם לא הוזנה תוצאה כלל — ר'
+  // שיחה עם המשתמש: "אם שולחים סיכום בלי לרשום תוצאה אני רוצה שתהיה
+  // הודעה שכחת לרשום תוצאה." נקראת מתוך save() — כך זה רץ גם בשיתוף/
+  // העתקה (אותו helper-pattern כמו checkGoalsReconciliation).
+  const checkResultEntered = () => {
+    if (!draft) return true;
+    if (draft.team1Score == null || draft.team2Score == null) {
+      return window.confirm("שים לב: שכחת לרשום תוצאה למשחק הזה. להמשיך בכל זאת?");
+    }
+    return true;
+  };
   const checkGoalsReconciliation = () => {
     if (!draft) return true;
     const sum1 = sumGoals("team1"), sum2 = sumGoals("team2");
@@ -645,6 +656,7 @@ function SummaryEditorView({ roster, cred, setView }) {
   // למה ששמור.
   const save = async () => {
     if (!draft) return false;
+    if (!checkResultEntered()) return false;
     if (!checkGoalsReconciliation()) return false;
     setBusy(true); setSavedMsg("");
     // שורה לכל שחקן בחלוקה הנוכחית — גם בלי ציון/גולים — כי מ-migrations/0049

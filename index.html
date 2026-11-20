@@ -2078,6 +2078,17 @@ function PendingRequestRow({ req, onApprove, onReject }) {
 
 function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }) {
   const [showNew,setShowNew]=useState(false);
+  // זום לתצוגת רשימת השחקנים בפאנל "הכן כוחות למשחק" — העדפת מכשיר אחת
+  // משותפת לכל המשחקים (לא לפי משחק), כדי שהאדמין לא יצטרך לכווץ זום
+  // דפדפן/טלפון מבחוץ כדי לראות את כל הקבוצה על מסך אחד (ר' שיחה עם המשתמש).
+  const [teamZoom,setTeamZoom]=useState(() => {
+    try { return Number(localStorage.getItem("teamZoom")) || 100; } catch { return 100; }
+  });
+  const bumpZoom = delta => setTeamZoom(z => {
+    const nz = Math.max(60, Math.min(150, z + delta));
+    try { localStorage.setItem("teamZoom", nz); } catch {}
+    return nz;
+  });
   // משחק שכבר יש לו תוצאה שמורה (admin_set_game_result) "נצרב" להיסטוריה —
   // נעלם לגמרי מטאב "משחקים" (גם מהרשימה הפעילה וגם מ"משחקים קודמים
   // ונעולים"), לא רק מתקפל, ונשאר נגיש רק דרך טאב "📜 היסטוריה" (ר' שיחה
@@ -2123,7 +2134,7 @@ function AdminGames({ games, roster, now, refresh, cred, attendanceCounts, grade
       </div>
       {(showNew || !hasOpenGame) && <NewGameForm onAdd={addGame} />}
       {sorted.map(g=>(
-        <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} refreshGrades={refreshGrades} />
+        <AdminGameRow key={g.id} game={g} roster={roster} now={now} refresh={refresh} cred={cred} attendanceCounts={attendanceCounts} grades={grades} refreshGrades={refreshGrades} teamZoom={teamZoom} bumpZoom={bumpZoom} />
       ))}
     </section>
   );
@@ -2440,7 +2451,7 @@ const statusLabel = p => {
 };
 const statusClass = p => (p.is_ganigari && p.is_vatik) ? "badge gv" : p.is_ganigari ? "badge g" : p.is_vatik ? "badge v" : "badge r";
 
-function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades }) {
+function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grades, refreshGrades, teamZoom, bumpZoom }) {
   const sorted = sortRegs(game.registrations.map(r=>({player_id:r.playerId,ts:r.ts,attended:r.attended,guest_name:r.guestName})), roster, attendanceCounts);
   const main = sorted.slice(0,MAX_PLAYERS), wait = sorted.slice(MAX_PLAYERS);
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
@@ -2909,6 +2920,12 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
       {showTeamSplit && teamsLoading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
       {showTeamSplit && !teamsLoading && teamSplit && (
         <div style={S.teamSplitPanel}>
+          <div style={S.zoomRow}>
+            <button type="button" style={S.zoomBtn} onClick={()=>bumpZoom(-10)} disabled={teamZoom<=60}>－</button>
+            <span style={S.zoomLabel}>תצוגה {teamZoom}%</span>
+            <button type="button" style={S.zoomBtn} onClick={()=>bumpZoom(10)} disabled={teamZoom>=150}>＋</button>
+          </div>
+          <div style={{zoom: teamZoom + "%"}}>
           <div style={S.teamSplitCols}>
             <div style={{...S.teamCol,background:"#3b82f6"}}>
               {teamSplit.team1.map(p=>(
@@ -2944,6 +2961,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
                 </div>
               ))}
             </div>
+          </div>
           </div>
           {/* סיכוי ניצחון משוער — אותו חישוב בדיוק שכבר קובע את החלוקה
               (balanceScore ב-logic.js), רק מוצג לאדמין כאחוזים (ר' שיחה עם
@@ -3740,6 +3758,9 @@ const S = {
   teamRemoveX: { opacity:0.7, fontSize:13, flexShrink:0, padding:"2px 4px", cursor:"pointer" },
   teamSplitFooterRow: { display:"flex" },
   teamSplitFooter: { flex:1, textAlign:"center", fontWeight:800, fontSize:12, padding:"10px 4px" },
+  zoomRow: { display:"flex", alignItems:"center", justifyContent:"center", gap:10, padding:"6px 0 10px", color:"#fff" },
+  zoomBtn: { width:30, height:30, borderRadius:8, border:"none", background:"rgba(255,255,255,.25)", color:"#fff", fontSize:16, fontWeight:700, cursor:"pointer" },
+  zoomLabel: { fontSize:13, fontWeight:700, minWidth:70, textAlign:"center" },
   // עטיפה עם height:0+overflow:hidden (לא position:absolute/fixed) —
   // גם position:absolute עם left שלילי (גרם למסך ריק ב-RTL) וגם
   // position:fixed+transform (גרם לתמונת html2canvas ריקה — בעיה ידועה

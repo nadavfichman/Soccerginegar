@@ -1209,7 +1209,8 @@ end; $$;
 -- migrations/0049: אם כבר יש שורות שמורות לסיכום הזה (game_round_summary_ratings)
 -- — הן מקור האמת (כולל שחקנים שהוחלפו/הוספו ע"י שניידר ואינם ב-game_teams
 -- בכלל). אחרת (משחק שמעולם לא נערך) — ברירת מחדל מ-game_teams, כמו קודם.
-create or replace function summary_get_draft(input_summary_pw text, input_game_id text, input_pw text default null, input_phone text default null, input_pin text default null)
+drop function if exists summary_get_draft(text, text, text, text, text);
+create function summary_get_draft(input_summary_pw text, input_game_id text, input_pw text default null, input_phone text default null, input_pin text default null)
 returns table(player_id text, team smallint, guest_name text, rating numeric, goals integer, narrative text, published boolean, team1_score integer, team2_score integer)
 language plpgsql security definer as $$
 declare v_has_rows boolean;
@@ -1279,7 +1280,8 @@ end; $$;
 -- migrations/0038: כולל גם team1_score/team2_score (התוצאה של שניידר
 -- עצמו) — דורש drop+create כי שינוי RETURNS TABLE, לא רק body.
 drop function if exists get_round_summary_latest();
-create or replace function get_round_summary_latest()
+drop function if exists get_round_summary_latest();
+create function get_round_summary_latest()
 returns table(game_id text, kickoff bigint, narrative text, team1_score integer, team2_score integer, player_id text, team smallint, guest_name text, rating numeric)
 language plpgsql security definer as $$
 declare v_game_id text;
@@ -1323,7 +1325,8 @@ grant execute on function get_round_summary_latest() to anon, authenticated;
 -- שולל לגמרי אפשרות של overload ישן/תקוע.
 -- migrations/0049: "has players" guard עובר מ-game_teams ל-
 -- game_round_summary_ratings (מקור האמת החדש).
-create or replace function get_published_round_summaries()
+drop function if exists get_published_round_summaries();
+create function get_published_round_summaries()
 returns table(game_id text, kickoff bigint, team1_score integer, team2_score integer)
 language plpgsql security definer as $$
 begin
@@ -1337,7 +1340,8 @@ begin
 end; $$;
 grant execute on function get_published_round_summaries() to anon, authenticated;
 
-create or replace function get_round_summary_by_game(input_game_id text)
+drop function if exists get_round_summary_by_game(text);
+create function get_round_summary_by_game(input_game_id text)
 returns table(game_id text, kickoff bigint, narrative text, team1_score integer, team2_score integer, player_id text, team smallint, guest_name text, rating numeric, goals integer)
 language plpgsql security definer as $$
 begin
@@ -1355,7 +1359,8 @@ grant execute on function get_round_summary_by_game(text) to anon, authenticated
 -- (טיוטה או מפורסם, לא רק הפרסום האחרון כמו get_round_summary_latest),
 -- לצפייה בלבד. require_admin רגיל (אותו cred כבר מאומת ב-AdminView),
 -- לא קשור לקוד שניידר/require_summary_access.
-create or replace function admin_get_round_summaries(input_pw text, input_phone text, input_pin text)
+drop function if exists admin_get_round_summaries(text, text, text);
+create function admin_get_round_summaries(input_pw text, input_phone text, input_pin text)
 returns table(game_id text, kickoff bigint, team1_score integer, team2_score integer, narrative text, published boolean, player_id text, team smallint, guest_name text, rating numeric, goals integer)
 language plpgsql security definer as $$
 declare v_role text;

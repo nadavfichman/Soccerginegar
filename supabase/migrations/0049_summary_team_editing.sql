@@ -54,8 +54,13 @@ where not exists (
 -- summary_get_draft: אם כבר יש שורות שמורות לסיכום הזה — הן מקור האמת
 -- (כולל שחקנים שהוספו/הוחלפו ע"י שניידר ואינם ב-game_teams בכלל).
 -- אחרת (משחק שמעולם לא נערך) — ברירת מחדל מ-game_teams, כמו קודם.
--- אותה חתימה/RETURNS TABLE בדיוק — body-only, create or replace מספיק.
-create or replace function summary_get_draft(input_summary_pw text, input_game_id text, input_pw text default null, input_phone text default null, input_pin text default null)
+-- drop+create מפורש (לא רק create or replace) — ההרצה הראשונה של
+-- המיגרציה הזו נכשלה עם "cannot change return type of existing
+-- function / Row type defined by OUT parameters is different", סימן
+-- שהחתימה שבאמת פרוסה ב-DB לא תאמה למה שהונח (אותה מחלקת-תקלה בדיוק
+-- כמו עמודת goals/migrations 0046-0048) — drop+create שולל את זה לגמרי.
+drop function if exists summary_get_draft(text, text, text, text, text);
+create function summary_get_draft(input_summary_pw text, input_game_id text, input_pw text default null, input_phone text default null, input_pin text default null)
 returns table(player_id text, team smallint, guest_name text, rating numeric, goals integer, narrative text, published boolean, team1_score integer, team2_score integer)
 language plpgsql security definer as $$
 declare v_has_rows boolean;
@@ -104,9 +109,12 @@ end; $$;
 
 -- קריאות (ציבוריות/אדמין) — מקור הנתונים עובר מ-game_teams ל-
 -- game_round_summary_ratings (מקור האמת החדש לכל מחזור ששמור), כדי
--- שהחלפות/הוספות של שניידר יופיעו גם לשחקנים/אדמין. אותה חתימה בדיוק
--- בכל הפונקציות האלה — body-only, create or replace מספיק.
-create or replace function get_round_summary_by_game(input_game_id text)
+-- שהחלפות/הוספות של שניידר יופיעו גם לשחקנים/אדמין. drop+create מפורש
+-- לכל ה-RETURNS TABLE (לא רק create or replace) — ר' ההערה למעלה
+-- ב-summary_get_draft: לא לוקחים סיכון עם חתימות שאולי לא תואמות
+-- בפועל למה שבקבצי התיעוד.
+drop function if exists get_round_summary_by_game(text);
+create function get_round_summary_by_game(input_game_id text)
 returns table(game_id text, kickoff bigint, narrative text, team1_score integer, team2_score integer, player_id text, team smallint, guest_name text, rating numeric, goals integer)
 language plpgsql security definer as $$
 begin
@@ -118,8 +126,10 @@ begin
     join game_round_summary_ratings rt on rt.game_id = grs.game_id
     where grs.game_id = input_game_id and grs.published = true;
 end; $$;
+grant execute on function get_round_summary_by_game(text) to anon, authenticated;
 
-create or replace function get_published_round_summaries()
+drop function if exists get_published_round_summaries();
+create function get_published_round_summaries()
 returns table(game_id text, kickoff bigint, team1_score integer, team2_score integer)
 language plpgsql security definer as $$
 begin
@@ -131,8 +141,10 @@ begin
     where grs.published = true
     order by g.kickoff desc;
 end; $$;
+grant execute on function get_published_round_summaries() to anon, authenticated;
 
-create or replace function admin_get_round_summaries(input_pw text, input_phone text, input_pin text)
+drop function if exists admin_get_round_summaries(text, text, text);
+create function admin_get_round_summaries(input_pw text, input_phone text, input_pin text)
 returns table(game_id text, kickoff bigint, team1_score integer, team2_score integer, narrative text, published boolean, player_id text, team smallint, guest_name text, rating numeric, goals integer)
 language plpgsql security definer as $$
 declare v_role text;
@@ -147,7 +159,8 @@ begin
     order by g.kickoff desc;
 end; $$;
 
-create or replace function get_round_summary_latest()
+drop function if exists get_round_summary_latest();
+create function get_round_summary_latest()
 returns table(game_id text, kickoff bigint, narrative text, team1_score integer, team2_score integer, player_id text, team smallint, guest_name text, rating numeric)
 language plpgsql security definer as $$
 declare v_game_id text;
@@ -167,3 +180,6 @@ begin
     join game_round_summary_ratings rt on rt.game_id = grs.game_id
     where grs.game_id = v_game_id;
 end; $$;
+grant execute on function get_round_summary_latest() to anon, authenticated;
+
+notify pgrst, 'reload schema';

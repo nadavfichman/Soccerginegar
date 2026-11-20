@@ -3212,11 +3212,13 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
                   </select>
                 </div>
               )}
-              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{color:"#1a2e1a",fontWeight:700,fontSize:13}}>🔵 כחולים</span>
                 <input style={{...S.input,width:50,padding:6,textAlign:"center"}} type="number" min="0" value={score1} onChange={e=>setScore1(e.target.value)} placeholder="0" />
-                <span style={{color:"#fff",fontWeight:700}}>:</span>
+                <span style={{color:"#1a2e1a",fontWeight:700}}>:</span>
                 <input style={{...S.input,width:50,padding:6,textAlign:"center"}} type="number" min="0" value={score2} onChange={e=>setScore2(e.target.value)} placeholder="0" />
-                <button className="btn primary small" style={{flex:1}} onClick={saveResult} disabled={savingResult || score1===""||score2===""}>{savingResult?"שומר…":"💾 הזן תוצאות"}</button>
+                <span style={{color:"#1a2e1a",fontWeight:700,fontSize:13}}>כתומים 🟠</span>
+                <button className="btn primary small" style={{flex:1,minWidth:"100%"}} onClick={saveResult} disabled={savingResult || score1===""||score2===""}>{savingResult?"שומר…":"💾 הזן תוצאות"}</button>
               </div>
             </div>
           )}

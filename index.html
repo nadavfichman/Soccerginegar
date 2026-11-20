@@ -461,6 +461,20 @@ async function callSummary(rpcName, args) {
   }
   return { data, error };
 }
+
+// הקטנה אוטומטית (לא ניתנת לכיוון ע"י המשתמש — אין פה בקרה כמו הזום
+// של האדמין) לתצוגות כוחות שאין מי שיכוון להן זום: הצגת הכוחות לשחקן
+// בתוך האפליקציה והתמונה שנשלחת לוואטסאפ. ר' שיחה עם המשתמש: "המטרה
+// שלי שהכל יראה במסך אחד... גם כשמציג את זה לשחקנים באפליקציה." לפי
+// הצד הגדול מבין שתי הקבוצות — ככל שיש יותר שחקנים, קטן יותר כל שורה,
+// כך שגם קבוצה גדולה (12-15+ בצד) נשארת קומפקטית ולא מתפרשת על הרבה
+// יותר מסך אחד.
+function autoTeamZoom(maxPerSide) {
+  if (maxPerSide <= 9) return 100;
+  if (maxPerSide <= 11) return 88;
+  if (maxPerSide <= 13) return 78;
+  return 68;
+}
 function SummaryEditorView({ roster, cred, setView }) {
   const [pw,setPw] = useState("");
   const [verifiedPw,setVerifiedPw] = useState(null);
@@ -1390,6 +1404,7 @@ function TeamsDisplay({ gameId, roster, regs }) {
       {show && loading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
       {show && !loading && teams && (
         <div style={S.teamSplitPanel}>
+          <div style={{zoom: autoTeamZoom(Math.max(teams.team1.length, teams.team2.length)) + "%"}}>
           <div style={S.teamSplitCols}>
             <div style={{...S.teamCol,background:"#3b82f6"}}>
               {teams.team1.map((p,i)=>
@@ -1417,6 +1432,7 @@ function TeamsDisplay({ gameId, roster, regs }) {
           <div style={S.teamSplitFooterRow}>
             <div style={{...S.teamSplitFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teams.team1.length} שחקנים</div>
             <div style={{...S.teamSplitFooter,background:"#ffedd5",color:"#7c2d12"}}>{teams.team2.length} שחקנים</div>
+          </div>
           </div>
         </div>
       )}
@@ -2795,9 +2811,9 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
   // לאפליקציה של דרור ("לשתף גם את התוצאה הסופית, לא רק את החלוקה מראש").
   const buildResultMsg = () => {
     if (!gameResult) return "";
-    const winnerLine = gameResult.team1_score > gameResult.team2_score ? "🏆 קבוצה 1 ניצחה!"
-      : gameResult.team2_score > gameResult.team1_score ? "🏆 קבוצה 2 ניצחה!" : "🤝 תיקו";
-    return "⚽ כדורגל גניגרי ושות'\nתוצאת המשחק מ-"+dayName(game.kickoff)+" "+dateOnly(game.kickoff)+":\nקבוצה 1 "+gameResult.team1_score+" - "+gameResult.team2_score+" קבוצה 2\n"+winnerLine;
+    const winnerLine = gameResult.team1_score > gameResult.team2_score ? "🔵 ניצחון לכחולים"
+      : gameResult.team2_score > gameResult.team1_score ? "🟠 ניצחון לכתומים" : "🤝 תיקו";
+    return "⚽ כדורגל גניגרי ושות'\nתוצאת המשחק מ-"+dayName(game.kickoff)+" "+dateOnly(game.kickoff)+":\n🔵 כחולים "+gameResult.team1_score+" - "+gameResult.team2_score+" כתומים 🟠\n"+winnerLine;
   };
   const shareResultMsg = () => window.open("https://wa.me/?text="+encodeURIComponent(buildResultMsg()), "_blank");
   const reshuffleTeams = () => setTeamSplit(splitTeamsByChemistry(adjustedForSplit, chemistry));
@@ -2967,7 +2983,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
           <div style={S.teamSplitCols}>
             <div style={{...S.teamCol,background:"#3b82f6"}}>
               {teamSplit.team1.map(p=>(
-                <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,1)} title="הקש להעברה לקבוצה 2">
+                <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,1)} title="הקש להעברה לכתומים">
                   <div style={S.teamPlayerLine1}>
                     <span style={S.teamGradeBadge}>{p.grade}</span>
                     <span style={S.teamPlayerName}>{p.name}</span>
@@ -2984,7 +3000,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
             </div>
             <div style={{...S.teamCol,background:"#f97316"}}>
               {teamSplit.team2.map(p=>(
-                <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,2)} title="הקש להעברה לקבוצה 1">
+                <div key={p.id} style={S.teamPlayerRow} onClick={()=>swapPlayer(p.id,2)} title="הקש להעברה לכחולים">
                   <div style={S.teamPlayerLine1}>
                     <span style={S.teamPlayerName}>{p.name}</span>
                     <span style={S.teamGradeBadge}>{p.grade}</span>
@@ -3007,7 +3023,7 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
               כמו הדירוגים עצמם — לא מוצג לשחקנים. */}
           {(() => {
             const p1 = teamWinProbability(chemistry, adjustedForSplit, teamSplit.team1.map(p=>p.id), teamSplit.team2.map(p=>p.id));
-            return <div style={{textAlign:"center",color:"#1a2e1a",fontSize:13,opacity:0.9,marginBottom:4}}>🔮 סיכוי ניצחון משוער: קבוצה 1 {p1}% · קבוצה 2 {100-p1}%</div>;
+            return <div style={{textAlign:"center",color:"#1a2e1a",fontSize:13,opacity:0.9,marginBottom:4}}>🔮 סיכוי ניצחון משוער: 🔵 כחולים {p1}% · 🟠 כתומים {100-p1}%</div>;
           })()}
           <div style={S.teamSplitFooterRow}>
             <div style={{...S.teamSplitFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teamSplit.team1.length} שחקנים · דירוג {teamSplit.team1.reduce((s,p)=>s+p.grade,0)}</div>
@@ -3025,8 +3041,8 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
                 <input style={S.selectSm} placeholder="או שם אורח…" value={addSplitGuestName} onChange={e=>{setAddSplitGuestName(e.target.value); if(e.target.value){setAddSplitId("");}}} />
                 <input style={{...S.input,width:56,padding:6}} type="number" min="1" max="99" placeholder="50" value={addSplitGuestGrade} onChange={e=>setAddSplitGuestGrade(e.target.value)} title="דירוג לאורח (אופציונלי)" />
                 <select style={S.selectSm} value={addSplitTeam} onChange={e=>setAddSplitTeam(Number(e.target.value))}>
-                  <option value={1}>לקבוצה 1</option>
-                  <option value={2}>לקבוצה 2</option>
+                  <option value={1}>🔵 לכחולים</option>
+                  <option value={2}>🟠 לכתומים</option>
                 </select>
                 <button className="btn small" onClick={addToSplit} disabled={addingSplitPlayer || (!addSplitId && !addSplitGuestName.trim())}>{addingSplitPlayer?"מוסיף…":"הוסף"}</button>
               </div>
@@ -3049,10 +3065,10 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
           {hasHappened && (
             <div style={{marginTop:10,paddingTop:10,borderTop:"1px dashed rgba(255,255,255,.4)"}}>
               {gameResult && (
-                <div style={{textAlign:"center",color:"#fff",fontWeight:800,fontSize:15,marginBottom:6}}>
-                  <span style={{opacity:gameResult.team1_score>gameResult.team2_score?1:0.6}}>קבוצה 1: {gameResult.team1_score}</span>
+                <div style={{textAlign:"center",color:"#1a2e1a",fontWeight:800,fontSize:15,marginBottom:6}}>
+                  <span style={{opacity:gameResult.team1_score>gameResult.team2_score?1:0.6}}>🔵 כחולים: {gameResult.team1_score}</span>
                   {"  —  "}
-                  <span style={{opacity:gameResult.team2_score>gameResult.team1_score?1:0.6}}>קבוצה 2: {gameResult.team2_score}</span>
+                  <span style={{opacity:gameResult.team2_score>gameResult.team1_score?1:0.6}}>🟠 כתומים: {gameResult.team2_score}</span>
                   <button className="btn waBtn small" style={{display:"block",width:"100%",marginTop:8}} onClick={shareResultMsg}>📤 שתף תוצאה לוואטסאפ</button>
                   <select style={{...S.selectSm,width:"100%",marginTop:8,fontWeight:400,fontSize:13}} value={gameResult.mvp_player_id || ""} onChange={async e=>{
                     const newId = e.target.value || null;
@@ -3100,33 +3116,39 @@ function AdminGameRow({ game, roster, now, refresh, cred, attendanceCounts, grad
       )}
       <button className="btn waBtn" onClick={shareWa} disabled={main.length===0}>שלח רשימה לוואטסאפ</button>
       <button className="btn small" style={{marginTop:6,width:"100%"}} onClick={copyWaLog} disabled={main.length===0}>{copiedMsg || "📋 העתק רשימה בפורמט לוג וואטסאפ"}</button>
-      {teamSplit && (
-        <div style={S.teamCardWrap}>
-          <div ref={teamCardRef} style={S.teamCardHidden}>
-            <div style={S.teamCardHeader}>⚽ כדורגל גניגרי ושות'<br/>{dayName(game.kickoff)} · {fmtTime(game.kickoff)}</div>
-            <div style={S.teamCardCols}>
-              <div style={{...S.teamCardCol,background:"#3b82f6"}}>
-                {teamSplit.team1.map((p,i)=>(
-                  <div key={p.id} style={S.teamCardPlayer}>
-                    <span style={S.teamCardBadge}>{i+1}</span><span style={S.teamCardName}>{p.name}</span>{formDots(p.id)}
-                  </div>
-                ))}
+      {teamSplit && (() => {
+        // הקטנה אוטומטית לפי גודל הקבוצה הגדולה מבין השתיים (ר' שיחה עם
+        // המשתמש: "המטרה שלי כשאני שולח את זה בוואטסאפ שהכל יראה במסך
+        // אחד") — בערכי fontSize/padding ממשיים (לא CSS zoom), כי
+        // html2canvas לא תמיד מכבד את התכונה הלא-תקנית הזו.
+        const cs = autoTeamZoom(Math.max(teamSplit.team1.length, teamSplit.team2.length)) / 100;
+        const playerRow = (p,i) => (
+          <div key={p.id} style={{...S.teamCardPlayer, padding: Math.round(8*cs)+"px 0"}}>
+            <span style={{...S.teamCardBadge, width:Math.round(26*cs), height:Math.round(26*cs), fontSize:Math.round(12*cs)}}>{i+1}</span>
+            <span style={{...S.teamCardName, fontSize: Math.round(16*cs)}}>{p.name}</span>
+            {formDots(p.id)}
+          </div>
+        );
+        return (
+          <div style={S.teamCardWrap}>
+            <div ref={teamCardRef} style={S.teamCardHidden}>
+              <div style={{...S.teamCardHeader, fontSize: Math.round(17*cs), padding: Math.round(20*cs)+"px 10px"}}>⚽ כדורגל גניגרי ושות'<br/>{dayName(game.kickoff)} · {fmtTime(game.kickoff)}</div>
+              <div style={S.teamCardCols}>
+                <div style={{...S.teamCardCol,background:"#3b82f6", padding: Math.round(18*cs)+"px "+Math.round(16*cs)+"px"}}>
+                  {teamSplit.team1.map(playerRow)}
+                </div>
+                <div style={{...S.teamCardCol,background:"#f97316", padding: Math.round(18*cs)+"px "+Math.round(16*cs)+"px"}}>
+                  {teamSplit.team2.map(playerRow)}
+                </div>
               </div>
-              <div style={{...S.teamCardCol,background:"#f97316"}}>
-                {teamSplit.team2.map((p,i)=>(
-                  <div key={p.id} style={S.teamCardPlayer}>
-                    <span style={S.teamCardBadge}>{i+1}</span><span style={S.teamCardName}>{p.name}</span>{formDots(p.id)}
-                  </div>
-                ))}
+              <div style={S.teamCardFooterRow}>
+                <div style={{...S.teamCardFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teamSplit.team1.length} שחקנים</div>
+                <div style={{...S.teamCardFooter,background:"#ffedd5",color:"#7c2d12"}}>{teamSplit.team2.length} שחקנים</div>
               </div>
-            </div>
-            <div style={S.teamCardFooterRow}>
-              <div style={{...S.teamCardFooter,background:"#dbeafe",color:"#1e3a8a"}}>{teamSplit.team1.length} שחקנים</div>
-              <div style={{...S.teamCardFooter,background:"#ffedd5",color:"#7c2d12"}}>{teamSplit.team2.length} שחקנים</div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
       <div style={S.addRow}>
         <select style={S.selectSm} value={addId} onChange={e=>setAddId(e.target.value)}>
           <option value="">+ הוסף שחקן ידנית…</option>

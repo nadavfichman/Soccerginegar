@@ -771,22 +771,20 @@ function SummaryEditorView({ roster, cred, setView }) {
     catch { window.prompt("העתק ידנית (Ctrl+C):", text); setCopiedMsg(""); }
     setTimeout(()=>setCopiedMsg(""), 2500);
   };
-  // פותחים טאב ריק באופן מיידי וסינכרוני (בתוך תגובת-הלחיצה עצמה) ורק
-  // אז מנווטים אותו — אחרת, אחרי ה-await של השמירה, חלק מהדפדפנים
-  // (בעיקר Safari) חוסמים window.open כי הוא כבר לא "תוך כדי" הקליק.
-  // הבדיקות עצמן (checkResultEntered/checkGoalsReconciliation) רצות
-  // *לפני* ה-window.open, כדי שלא יהיה טאב ריק פתוח ממתין מאחורי דיאלוג
-  // חוסם — ור' שיחה עם המשתמש: "לא נותן לשתף... משהו שם קורה לא נותן."
+  // פתיחת וואטסאפ ישירה אחרי שהשמירה הצליחה — בדיוק אותו דפוס כמו כל
+  // כפתור שיתוף אחר באפליקציה (shareWa/shareOpenMsg/shareResultMsg
+  // וכו', בלי יוצא מהכלל): window.open ישיר, בלי טאב ריק שנפתח מראש
+  // וממתין לניווט מאוחר יותר. הניסיון הקודם (טאב ריק + win.location.href
+  // אחרי ה-await) היה אמור לפתור חסימת פופ-אפ בספארי, אבל הוא היחיד
+  // בכל הקובץ שעובד ככה — וזה בדיוק תאם את מה שהמשתמש דיווח ("לוחץ על
+  // הכפתור ואז קורה משהו ואז בעצם שום דבר לא קורה", כמו טאב ריק שנתקע).
+  // הבדיקות (checkResultEntered/checkGoalsReconciliation) עדיין רצות
+  // לפני כל דבר אחר.
   const shareSummaryMsg = async () => {
     if (!draft) return;
     if (!checkResultEntered() || !checkGoalsReconciliation()) return;
-    const win = window.open("", "_blank");
-    if (!(await runSaveMutation())) {
-      if (win) win.close();
-      window.alert("השמירה נכשלה — נסה שוב, ואז נסה לשתף שוב.");
-      return;
-    }
-    if (win) win.location.href = "https://wa.me/?text="+encodeURIComponent(buildSummaryMsg());
+    if (!(await runSaveMutation())) { window.alert("השמירה נכשלה — נסה שוב, ואז נסה לשתף שוב."); return; }
+    window.open("https://wa.me/?text="+encodeURIComponent(buildSummaryMsg()), "_blank");
   };
 
   // כפתור חזרה ברור, בתוך הכרטיס עצמו (לא רק בפוטר הדף שלפעמים צריך

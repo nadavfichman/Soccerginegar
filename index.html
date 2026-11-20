@@ -472,6 +472,17 @@ function SummaryEditorView({ roster, cred, setView }) {
   const [draft,setDraft] = useState(null); // {team1:[{id,name,rating}], team2:[...], narrative, published, team1Score, team2Score, kickoff}
   const [savedMsg,setSavedMsg] = useState("");
   const [copiedMsg,setCopiedMsg] = useState("");
+  // זום לרשימת השחקנים — בדיוק כמו בפאנל "הכן כוחות למשחק" (ר' שיחה עם
+  // המשתמש), אותו מפתח localStorage ("summaryZoom") כמו ב-RoundSummaryHistory
+  // כדי שההעדפה תישמר גם כשעוברים בין מסך העריכה לטאב ההיסטוריה.
+  const [sumZoom,setSumZoom] = useState(() => {
+    try { return Number(localStorage.getItem("summaryZoom")) || 100; } catch { return 100; }
+  });
+  const bumpSumZoom = delta => setSumZoom(z => {
+    const nz = Math.max(60, Math.min(150, z + delta));
+    try { localStorage.setItem("summaryZoom", nz); } catch {}
+    return nz;
+  });
 
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
   const displayNm = (id, guestName) => guestName ? (guestName+" (אורח)") : nameOf(id);
@@ -728,6 +739,12 @@ function SummaryEditorView({ roster, cred, setView }) {
               <span style={{fontSize:12,color:(draft.team1Score!=null && sumGoals("team1")!==draft.team1Score)?"#c0392b":"#5b6b7a"}}>⚽ כחולים: {sumGoals("team1")}</span>
               <span style={{fontSize:12,color:(draft.team2Score!=null && sumGoals("team2")!==draft.team2Score)?"#c0392b":"#5b6b7a"}}>⚽ כתומים: {sumGoals("team2")}</span>
             </div>
+            <div style={S.zoomRow}>
+              <button type="button" style={S.zoomBtn} onClick={()=>bumpSumZoom(-10)} disabled={sumZoom<=60}>－</button>
+              <span style={S.zoomLabel}>תצוגה {sumZoom}%</span>
+              <button type="button" style={S.zoomBtn} onClick={()=>bumpSumZoom(10)} disabled={sumZoom>=150}>＋</button>
+            </div>
+            <div style={{zoom: sumZoom + "%"}}>
             <div style={{...S.teamSplitCols,marginTop:10}}>
               <div style={{...S.teamCol,background:"#3b82f6"}}>
                 {draft.team1.map(p => (
@@ -771,6 +788,7 @@ function SummaryEditorView({ roster, cred, setView }) {
                   </div>
                 ))}
               </div>
+            </div>
             </div>
             <label style={{...S.labelSm,marginTop:10}}>סיכום המחזור (טקסט חופשי)</label>
             <textarea style={{...S.input,minHeight:160,fontFamily:"inherit"}} value={draft.narrative} onChange={e=>setDraft(prev=>({...prev,narrative:e.target.value}))} placeholder="מאכזב / מצטיין / מהלך המשחק / הערות…" />
@@ -2307,6 +2325,17 @@ function RoundSummaryHistory({ cred, roster, setView }) {
   const [loading,setLoading]=useState(true);
   const [rows,setRows]=useState(null); // שורות גולמיות (שחקן אחד לשורה) מה-RPC
   const [expanded,setExpanded]=useState(null);
+  // זום לרשימת השחקנים — אותו מפתח localStorage כמו ב-SummaryEditorView
+  // (ר' שיחה עם המשתמש: "זום לרשימת השחקנים בסיכום של שניידר, כמו בפאנל
+  // הכוחות"), כדי שההעדפה תישמר גם כשעוברים בין מסך העריכה לטאב ההיסטוריה.
+  const [zoom,setZoom] = useState(() => {
+    try { return Number(localStorage.getItem("summaryZoom")) || 100; } catch { return 100; }
+  });
+  const bumpZoom = delta => setZoom(z => {
+    const nz = Math.max(60, Math.min(150, z + delta));
+    try { localStorage.setItem("summaryZoom", nz); } catch {}
+    return nz;
+  });
   const nameOf = id => (roster.find(r=>r.id===id)||{}).name || "—";
   const displayNm = (id, guestName) => guestName ? (guestName+" (אורח)") : nameOf(id);
   useEffect(() => {
@@ -2334,6 +2363,13 @@ function RoundSummaryHistory({ cred, roster, setView }) {
       <h2 style={S.h2}>📋 סיכומי שניידר</h2>
       <p style={S.hint}>לצפייה בלבד. כדי למלא/לערוך סיכום בעצמך — בדיוק כמו שניידר, בלי להקיש סיסמה שוב — תמיד זמין:</p>
       <button className="btn primary" style={{width:"100%",marginBottom:10}} onClick={()=>setView("summary")}>✍️ מעבר למסך העריכה (כמו שניידר)</button>
+      {!loading && games.length > 0 && (
+        <div style={S.zoomRow}>
+          <button type="button" style={S.zoomBtn} onClick={()=>bumpZoom(-10)} disabled={zoom<=60}>－</button>
+          <span style={S.zoomLabel}>תצוגה {zoom}%</span>
+          <button type="button" style={S.zoomBtn} onClick={()=>bumpZoom(10)} disabled={zoom>=150}>＋</button>
+        </div>
+      )}
       {loading && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>טוען…</div>}
       {!loading && games.length === 0 && <div style={{...S.subLine,marginTop:8,textAlign:"center"}}>אין עדיין סיכומים</div>}
       {!loading && games.map(g => {
@@ -2353,6 +2389,7 @@ function RoundSummaryHistory({ cred, roster, setView }) {
             {isOpen && (
               <div style={{padding:"4px 4px 10px"}}>
                 {g.narrative && <p style={{whiteSpace:"pre-wrap",marginBottom:8}}>{g.narrative}</p>}
+                <div style={{zoom: zoom + "%"}}>
                 <div style={S.teamSplitCols}>
                   <div style={{...S.teamCol,background:"#3b82f6"}}>
                     {playersFor(g.game_id,1).map(p=>(
@@ -2376,6 +2413,7 @@ function RoundSummaryHistory({ cred, roster, setView }) {
                       </div>
                     ))}
                   </div>
+                </div>
                 </div>
               </div>
             )}

@@ -609,6 +609,32 @@ function SummaryEditorView({ roster, cred, setView }) {
   const removePlayerFromDraft = (team, pid) => {
     setDraft(prev => prev && { ...prev, [team]: prev[team].filter(p=>p.id!==pid) });
   };
+  // רשימה שטוחה של כל השחקנים בטיוטה, עם תיוג קבוצה — לבחירה מתוך
+  // תפריט (לא אייקון צמוד לכל שורה) להסרה/העברה. ר' שיחה עם המשתמש:
+  // "כל פעם לוחצים וזה בטעות מסיר את השחקן... עדיף שיהיה למטה כפתור
+  // שאלה, מתוך רשימה, ורק אחרי אישור" — בדיוק מה שקרה לו בפועל: "רצו
+  // להוסיף לו ציון ובמקום זה לחצו על ה-X וזה נמחק."
+  const allDraftPlayers = draft ? [
+    ...draft.team1.map(p => ({ ...p, team: "team1" })),
+    ...draft.team2.map(p => ({ ...p, team: "team2" })),
+  ] : [];
+  const [removeSelId,setRemoveSelId] = useState("");
+  const confirmRemovePlayer = () => {
+    const target = allDraftPlayers.find(p=>p.id===removeSelId);
+    if (!target) return;
+    if (!window.confirm("להסיר את "+target.name+" מהסיכום? (הציון/הגולים שלו יימחקו)")) return;
+    removePlayerFromDraft(target.team, target.id);
+    setRemoveSelId("");
+  };
+  const [swapSelId,setSwapSelId] = useState("");
+  const confirmSwapPlayer = () => {
+    const target = allDraftPlayers.find(p=>p.id===swapSelId);
+    if (!target) return;
+    const toLabel = target.team==="team1" ? "לכתומים" : "לכחולים";
+    if (!window.confirm("להעביר את "+target.name+" "+toLabel+"?")) return;
+    swapPlayer(target.team, target.id);
+    setSwapSelId("");
+  };
   const [addId,setAddId] = useState("");
   const [addGuestName,setAddGuestName] = useState("");
   const [addTeam,setAddTeam] = useState("team1");
@@ -810,10 +836,6 @@ function SummaryEditorView({ roster, cred, setView }) {
                   <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
                     <div style={S.teamPlayerLine1}>
                       <span style={S.teamPlayerName}>{p.name}</span>
-                      <span style={S.teamIconCluster}>
-                        <span style={S.teamRemoveX} onClick={()=>swapPlayer("team1",p.id)} title="העבר לכתומים">⇄</span>
-                        <span style={S.teamRemoveX} onClick={()=>removePlayerFromDraft("team1",p.id)} title="הסר מהסיכום">✕</span>
-                      </span>
                     </div>
                     <div style={{...S.ratingStepper,justifyContent:"center"}}>
                       <span style={{fontSize:11,opacity:.85}}>⭐</span>
@@ -835,10 +857,6 @@ function SummaryEditorView({ roster, cred, setView }) {
                   <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
                     <div style={S.teamPlayerLine1}>
                       <span style={S.teamPlayerName}>{p.name}</span>
-                      <span style={S.teamIconCluster}>
-                        <span style={S.teamRemoveX} onClick={()=>swapPlayer("team2",p.id)} title="העבר לכחולים">⇄</span>
-                        <span style={S.teamRemoveX} onClick={()=>removePlayerFromDraft("team2",p.id)} title="הסר מהסיכום">✕</span>
-                      </span>
                     </div>
                     <div style={{...S.ratingStepper,justifyContent:"center"}}>
                       <span style={{fontSize:11,opacity:.85}}>⭐</span>
@@ -879,6 +897,25 @@ function SummaryEditorView({ roster, cred, setView }) {
                 </div>
               );
             })()}
+            {/* העברה/הסרה דרך רשימה+אישור, לא אייקון צמוד לכל שורה — ר'
+                שיחה עם המשתמש: "כל פעם לוחצים וזה בטעות מסיר את השחקן...
+                רצו להוסיף לו ציון ובמקום להוסיף ציון לחצו שם על ה-X וזה
+                נמחק." עכשיו צריך לבחור מתוך תפריט ולאשר במפורש לפני
+                שמשהו קורה בפועל. */}
+            <div style={{display:"flex",gap:6,alignItems:"center",marginTop:8,flexWrap:"wrap"}}>
+              <select style={S.selectSm} value={swapSelId} onChange={e=>setSwapSelId(e.target.value)}>
+                <option value="">⇄ העברת שחקן בין קבוצות…</option>
+                {allDraftPlayers.map(p=><option key={p.id} value={p.id}>{p.name} ({p.team==="team1"?"כחולים":"כתומים"})</option>)}
+              </select>
+              <button type="button" className="btn small" onClick={confirmSwapPlayer} disabled={!swapSelId}>העבר</button>
+            </div>
+            <div style={{display:"flex",gap:6,alignItems:"center",marginTop:8,flexWrap:"wrap"}}>
+              <select style={S.selectSm} value={removeSelId} onChange={e=>setRemoveSelId(e.target.value)}>
+                <option value="">✕ הסרת שחקן מהסיכום…</option>
+                {allDraftPlayers.map(p=><option key={p.id} value={p.id}>{p.name} ({p.team==="team1"?"כחולים":"כתומים"})</option>)}
+              </select>
+              <button type="button" className="btn danger small" onClick={confirmRemovePlayer} disabled={!removeSelId}>הסר</button>
+            </div>
             <label style={{...S.labelSm,marginTop:10}}>סיכום המחזור (טקסט חופשי)</label>
             <textarea style={{...S.input,minHeight:160,fontFamily:"inherit"}} value={draft.narrative} onChange={e=>setDraft(prev=>({...prev,narrative:e.target.value}))} placeholder="מאכזב / מצטיין / מהלך המשחק / הערות…" />
             <label style={{...S.flagLabel,marginTop:10,display:"flex"}}>

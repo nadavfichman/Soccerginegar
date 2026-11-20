@@ -1022,7 +1022,7 @@ function RoundSummaryBanner({ roster }) {
           <select style={{...S.input,marginBottom:10}} value={gameId} onChange={e=>onSelect(e.target.value)}>
             {list.map(g=>(
               <option key={g.game_id} value={g.game_id}>
-                {dayName(g.kickoff)} {dateOnly(g.kickoff)}{g.team1_score!=null?(" — "+g.team1_score+":"+g.team2_score):""}
+                {dayName(g.kickoff)} {dateOnly(g.kickoff)}{g.team1_score!=null?(" — "+g.team1_score+":"+g.team2_score+" ("+(g.team1_score>g.team2_score?"ניצחון לכחולים":g.team2_score>g.team1_score?"ניצחון לכתומים":"תיקו")+")"):""}
               </option>
             ))}
           </select>

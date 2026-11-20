@@ -1155,27 +1155,48 @@ end; $$;
 -- 8 כישלונות כאלה תוך 10 דקות — בדיוק מה שקרה תוך כדי בדיקות — כל
 -- המערכת (גם האדמין האמיתי!) ננעלה, וכל קריאה דרך require_summary_access
 -- (כולל summary_save) נכשלה עם 'locked'.
+-- migrations/0050: הבדיקה "אולי זו בעצם סיסמת אדמין-על" כבר לא עוברת
+-- דרך check_login (שמשתפת מכסת-נעילה גלובלית עם מסך הכניסה האמיתי
+-- של אדמין-העל) — מכסה נפרדת (kind='summary_su') כדי שניחוש שגוי בדף
+-- הסיכום הציבורי של שניידר לעולם לא "ישרוף" את מכסת אדמין-העל האמיתי.
 create or replace function check_summary_access(input_summary_pw text, input_pw text)
 returns boolean language plpgsql security definer as $$
-declare v_role text;
+declare s record; fail_count int; window_minutes int := 10; max_attempts int := 8;
 begin
   if check_summary_login(input_summary_pw) then return true; end if;
-  v_role := check_login(input_pw, null, null);
-  return v_role is not null and v_role <> 'locked';
+  if input_pw is null then return false; end if;
+  select count(*) into fail_count from login_attempts where kind='summary_su' and created_at > now() - (window_minutes||' minutes')::interval;
+  if fail_count >= max_attempts then return false; end if;
+  select super_pw into s from settings where id = 1;
+  if crypt(input_pw, s.super_pw) = s.super_pw then return true; end if;
+  insert into login_attempts (kind, key) values ('summary_su','x');
+  return false;
 end; $$;
 
 -- עזר פנימי (לא נקרא ישירות מהלקוח) לשאר ה-RPCs של דף הסיכום — מקבל
 -- אם האישורים הרגילים (אדמין-על/מנהל) תקינים, או אם קוד שניידר תקין.
 -- raise בכישלון, אותו עיקרון כמו require_admin. ר' migrations/0045
 -- לגבי סדר הבדיקה.
+-- migrations/0050: כנ"ל — סיסמת-על נבדקת כאן במכסת-נעילה נפרדת
+-- (kind='summary_su'), לעולם לא kind='super' המשותפת. טלפון+פין
+-- ממשיך לעבור דרך check_login כרגיל (מכסה מבודדת-לפי-טלפון, לא היה שם באג).
 create or replace function require_summary_access(input_summary_pw text, input_pw text, input_phone text, input_pin text)
 returns text language plpgsql security definer as $$
-declare v_role text;
+declare s record; fail_count int; window_minutes int := 10; max_attempts int := 8; v_role text;
 begin
   if check_summary_login(input_summary_pw) then return 'schneider'; end if;
-  v_role := check_login(input_pw, input_phone, input_pin);
-  if v_role = 'locked' then raise exception 'locked'; end if;
-  if v_role is not null then return v_role; end if;
+  if input_pw is not null then
+    select count(*) into fail_count from login_attempts where kind='summary_su' and created_at > now() - (window_minutes||' minutes')::interval;
+    if fail_count >= max_attempts then raise exception 'locked'; end if;
+    select super_pw into s from settings where id = 1;
+    if crypt(input_pw, s.super_pw) = s.super_pw then return 'super'; end if;
+    insert into login_attempts (kind, key) values ('summary_su','x');
+  end if;
+  if input_phone is not null and input_pin is not null then
+    v_role := check_login(null, input_phone, input_pin);
+    if v_role = 'locked' then raise exception 'locked'; end if;
+    if v_role is not null then return v_role; end if;
+  end if;
   raise exception 'not_authorized';
 end; $$;
 

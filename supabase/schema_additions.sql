@@ -96,11 +96,18 @@ alter table game_round_summary enable row level security;
 -- שינוי. הטווח עודכן מ-1-10 ל-0-10 ב-migrations/0039. goals (-5 עד
 -- 10, כולל גול עצמי כערך שלילי) נוסף ב-migrations/0040 — rating
 -- הפך לניתן ל-null אז, כדי שגולים יוכלו להירשם גם בלי ציון.
+-- team/guest_name (migrations/0049): מהרגע שלמשחק יש ולו שורה אחת כאן,
+-- הטבלה הזו (לא game_teams) היא מקור האמת למי-שיחק-באיזו-קבוצה לאותו
+-- סיכום — כדי ששניידר יוכל להחליף שחקנים בין קבוצות/להוסיף שחקן
+-- (כולל אורח חד-פעמי משלו, עצמאי מ-registrations.guest_name) בלי
+-- לגעת כלל ב-game_teams האמיתי שמשפיע על חישובי כימיה/איזון לעתיד.
 create table if not exists game_round_summary_ratings (
   game_id text not null references games(id) on delete cascade,
   player_id text not null,
   rating numeric(3,1) check (rating is null or (rating >= 0 and rating <= 10 and rating*2 = floor(rating*2))),
   goals integer check (goals is null or (goals >= -5 and goals <= 10)),
+  team smallint,
+  guest_name text,
   primary key (game_id, player_id)
 );
 alter table game_round_summary_ratings enable row level security;

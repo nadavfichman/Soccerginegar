@@ -547,7 +547,7 @@ function SummaryEditorView({ roster, cred, setView }) {
     setBusy(false);
     const rows = data || [];
     const g = (games||[]).find(x=>x.game_id===gid);
-    const toPlayer = r => ({ id: r.player_id, name: displayNm(r.player_id, r.guest_name), rating: r.rating != null ? String(r.rating) : "", goals: r.goals != null ? r.goals : 0 });
+    const toPlayer = r => ({ id: r.player_id, name: displayNm(r.player_id, r.guest_name), guestName: r.guest_name || null, rating: r.rating != null ? String(r.rating) : "", goals: r.goals != null ? r.goals : 0 });
     setDraft({
       team1: rows.filter(r=>r.team===1).map(toPlayer),
       team2: rows.filter(r=>r.team===2).map(toPlayer),
@@ -590,6 +590,37 @@ function SummaryEditorView({ roster, cred, setView }) {
     }));
   };
   const sumGoals = team => (draft ? draft[team].reduce((s,p)=>s+(p.goals||0), 0) : 0);
+  // החלפה/הוספה/הסרה ידנית של שחקנים בין הקבוצות — ר' שיחה עם המשתמש:
+  // "שניידר גם רצה שתהיה לו אפשרות להחליף בין שחקנים בכוחות... שתהיה
+  // לו אפשרות גם להוסיף שחקן לכל קבוצה שהוא יזין שם. רוצה שתהיה לו
+  // גישה מלאה מהבחינה הזאת." הכל מקומי בלבד (state של draft), נשמר רק
+  // ב-💾 שמור — ולעולם לא נוגע ב-game_teams האמיתי (ר' migrations/0049):
+  // סיכום שניידר הוא תמונת-מצב עצמאית, בדיוק כמו שהציונים/הגולים שלו
+  // כבר עצמאיים מ-players.grade ומהכוחות עצמם.
+  const swapPlayer = (fromTeam, pid) => {
+    setDraft(prev => {
+      if (!prev) return prev;
+      const toTeam = fromTeam === "team1" ? "team2" : "team1";
+      const player = prev[fromTeam].find(p=>p.id===pid);
+      if (!player) return prev;
+      return { ...prev, [fromTeam]: prev[fromTeam].filter(p=>p.id!==pid), [toTeam]: [...prev[toTeam], player] };
+    });
+  };
+  const removePlayerFromDraft = (team, pid) => {
+    setDraft(prev => prev && { ...prev, [team]: prev[team].filter(p=>p.id!==pid) });
+  };
+  const [addId,setAddId] = useState("");
+  const [addGuestName,setAddGuestName] = useState("");
+  const [addTeam,setAddTeam] = useState("team1");
+  const addPlayerToDraft = () => {
+    const gName = addGuestName.trim();
+    if (!gName && !addId) return;
+    const newPlayer = gName
+      ? { id: "guest_"+(crypto.randomUUID ? crypto.randomUUID().replace(/-/g,"") : String(Math.random()).slice(2)), name: gName, guestName: gName, rating: "", goals: 0 }
+      : { id: addId, name: nameOf(addId), guestName: null, rating: "", goals: 0 };
+    setDraft(prev => prev && { ...prev, [addTeam]: [...prev[addTeam], newPlayer] });
+    setAddId(""); setAddGuestName("");
+  };
   // בקרת גולים מול התוצאה — ר' שיחה עם המשתמש: "הבקרה היא שסך הגולים
   // של כל קבוצה צריך להתכנס לתוצאה, אם לא מתאים, להקפיץ הודעה שיש
   // חוסר התאמה." צריכה לרוץ בכל פעולת-סיום, לא רק בשמירה — ר' שיחה
@@ -616,9 +647,11 @@ function SummaryEditorView({ roster, cred, setView }) {
     if (!draft) return false;
     if (!checkGoalsReconciliation()) return false;
     setBusy(true); setSavedMsg("");
-    const ratings = [...draft.team1, ...draft.team2]
-      .filter(p => (p.rating !== "" && p.rating != null) || (p.goals||0) !== 0)
-      .map(p => ({ player_id: p.id, rating: (p.rating !== "" && p.rating != null) ? Number(p.rating) : null, goals: p.goals||0 }));
+    // שורה לכל שחקן בחלוקה הנוכחית — גם בלי ציון/גולים — כי מ-migrations/0049
+    // ואילך game_round_summary_ratings הוא מקור האמת למי-בחלוקה; שחקן בלי
+    // שורה פשוט ייעלם בטעינה הבאה (גם אם הוא "רק" הוחלף/הוסף, בלי ציון).
+    const toRow = team => p => ({ player_id: p.id, team: team===1?1:2, guest_name: p.guestName||null, rating: (p.rating !== "" && p.rating != null) ? Number(p.rating) : null, goals: p.goals||0 });
+    const ratings = [...draft.team1.map(toRow(1)), ...draft.team2.map(toRow(2))];
     const { error } = await callSummary("summary_save", {
       ...credArgs(), input_game_id: gameId,
       input_narrative: draft.narrative, input_published: draft.published, input_ratings: ratings,
@@ -765,6 +798,10 @@ function SummaryEditorView({ roster, cred, setView }) {
                   <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
                     <div style={S.teamPlayerLine1}>
                       <span style={S.teamPlayerName}>{p.name}</span>
+                      <span style={S.teamIconCluster}>
+                        <span style={S.teamRemoveX} onClick={()=>swapPlayer("team1",p.id)} title="העבר לכתומים">⇄</span>
+                        <span style={S.teamRemoveX} onClick={()=>removePlayerFromDraft("team1",p.id)} title="הסר מהסיכום">✕</span>
+                      </span>
                     </div>
                     <div style={{...S.ratingStepper,justifyContent:"center"}}>
                       <span style={{fontSize:11,opacity:.85}}>⭐</span>
@@ -786,6 +823,10 @@ function SummaryEditorView({ roster, cred, setView }) {
                   <div key={p.id} style={{...S.teamPlayerRow,cursor:"default"}}>
                     <div style={S.teamPlayerLine1}>
                       <span style={S.teamPlayerName}>{p.name}</span>
+                      <span style={S.teamIconCluster}>
+                        <span style={S.teamRemoveX} onClick={()=>swapPlayer("team2",p.id)} title="העבר לכחולים">⇄</span>
+                        <span style={S.teamRemoveX} onClick={()=>removePlayerFromDraft("team2",p.id)} title="הסר מהסיכום">✕</span>
+                      </span>
                     </div>
                     <div style={{...S.ratingStepper,justifyContent:"center"}}>
                       <span style={{fontSize:11,opacity:.85}}>⭐</span>
@@ -804,6 +845,28 @@ function SummaryEditorView({ roster, cred, setView }) {
               </div>
             </div>
             </div>
+            {/* הוספת שחקן/אורח לסיכום — מקומי בלבד, נשמר רק ב-💾 שמור (ר'
+                שיחה עם המשתמש: "שתהיה לו אפשרות גם להוסיף שחקן לכל קבוצה
+                שהוא יזין שם"). הרשימה הנפתחת מציגה רק שחקנים שעוד לא
+                נמצאים באף אחת משתי הקבוצות, כמו אצל האדמין. */}
+            {(() => {
+              const inDraftIds = new Set([...draft.team1, ...draft.team2].map(p=>p.id));
+              const rosterOptionsForAdd = roster.filter(r => !inDraftIds.has(r.id)).slice().sort((a,b)=>a.name.localeCompare(b.name,"he"));
+              return (
+                <div style={{display:"flex",gap:6,alignItems:"center",marginTop:8,flexWrap:"wrap"}}>
+                  <select style={S.selectSm} value={addId} onChange={e=>{setAddId(e.target.value); if(e.target.value){setAddGuestName("");}}}>
+                    <option value="">+ הוסף שחקן קיים…</option>
+                    {rosterOptionsForAdd.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <input style={S.selectSm} placeholder="או שם אורח…" value={addGuestName} onChange={e=>{setAddGuestName(e.target.value); if(e.target.value){setAddId("");}}} />
+                  <select style={S.selectSm} value={addTeam} onChange={e=>setAddTeam(e.target.value)}>
+                    <option value="team1">🔵 לכחולים</option>
+                    <option value="team2">🟠 לכתומים</option>
+                  </select>
+                  <button type="button" className="btn small" onClick={addPlayerToDraft} disabled={!addId && !addGuestName.trim()}>הוסף</button>
+                </div>
+              );
+            })()}
             <label style={{...S.labelSm,marginTop:10}}>סיכום המחזור (טקסט חופשי)</label>
             <textarea style={{...S.input,minHeight:160,fontFamily:"inherit"}} value={draft.narrative} onChange={e=>setDraft(prev=>({...prev,narrative:e.target.value}))} placeholder="מאכזב / מצטיין / מהלך המשחק / הערות…" />
             <label style={{...S.flagLabel,marginTop:10,display:"flex"}}>
